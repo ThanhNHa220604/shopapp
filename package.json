@@ -1,0 +1,17 @@
+{
+  "scripts": {
+    "start": "concurrently \"npm run start --prefix backend\" \"npm run start --prefix fontend\""
+  },
+  "devDependencies": {
+    "@babel/node": "^7.29.7",
+    "autoprefixer": "^10.5.0",
+    "concurrently": "^10.0.0",
+    "nodemon": "^3.1.14",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19"
+  },
+  "dependencies": {
+    "lucide-react": "^1.17.0",
+    "react-router-dom": "^7.15.1"
+  }
+}

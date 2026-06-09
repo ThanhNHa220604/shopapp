@@ -1,0 +1,131 @@
+[
+{
+"name":"iPhone 15 Pro",
+"price":28990000,
+"oldprice":31990000,
+"image":"",
+"description":"Điện thoại flagship Apple chip A17 Pro, camera 48MP.",
+"specification":"256GB, 8GB RAM, OLED 6.1 inch",
+"buyturn":25,
+"quantity":15,
+"brand_id":6,
+"category_id":7
+},
+
+{
+"name":"Samsung Galaxy S24",
+"price":22990000,
+"oldprice":24990000,
+"image":"",
+"description":"Điện thoại Android cao cấp AI camera.",
+"specification":"256GB, 8GB RAM, AMOLED 6.2 inch",
+"buyturn":18,
+"quantity":20,
+"brand_id":7,
+"category_id":7
+},
+
+{
+"name":"MacBook Air M3",
+"price":31990000,
+"oldprice":34990000,
+"image":"",
+"description":"Laptop mỏng nhẹ chip M3.",
+"specification":"16GB RAM, 512GB SSD",
+"buyturn":12,
+"quantity":8,
+"brand_id":6,
+"category_id":8
+},
+
+{
+"name":"Dell XPS 13",
+"price":27990000,
+"oldprice":29990000,
+"image":"",
+"description":"Ultrabook cao cấp màn hình đẹp.",
+"specification":"Intel i7,16GB RAM,512GB SSD",
+"buyturn":10,
+"quantity":9,
+"brand_id":8,
+"category_id":8
+},
+
+{
+"name":"Logitech MX Master 3S",
+"price":2490000,
+"oldprice":2790000,
+"image":"",
+"description":"Chuột không dây cao cấp.",
+"specification":"Wireless, USB-C, 8000 DPI",
+"buyturn":40,
+"quantity":35,
+"brand_id":9,
+"category_id":9
+},
+
+{
+"name":"Sony WH-1000XM5",
+"price":7490000,
+"oldprice":8290000,
+"image":"",
+"description":"Tai nghe chống ồn cao cấp.",
+"specification":"Bluetooth 5.2, ANC",
+"buyturn":14,
+"quantity":12,
+"brand_id":10,
+"category_id":10
+},
+
+{
+"name":"iPad Air 5",
+"price":14990000,
+"oldprice":16990000,
+"image":"",
+"description":"Máy tính bảng chip M1.",
+"specification":"64GB, 10.9 inch",
+"buyturn":16,
+"quantity":11,
+"brand_id":6,
+"category_id":11
+},
+
+{
+"name":"ASUS ROG Strix G16",
+"price":35990000,
+"oldprice":38990000,
+"image":"",
+"description":"Laptop gaming RTX mạnh.",
+"specification":"i7, RTX4060,1TB SSD",
+"buyturn":7,
+"quantity":6,
+"brand_id":11,
+"category_id":8
+},
+
+{
+"name":"Canon EOS R50",
+"price":18990000,
+"oldprice":20990000,
+"image":"",
+"description":"Máy ảnh mirrorless sáng tạo nội dung.",
+"specification":"24MP,4K,kèm lens",
+"buyturn":5,
+"quantity":7,
+"brand_id":12,
+"category_id":12
+},
+
+{
+"name":"Apple Watch Series 9",
+"price":10990000,
+"oldprice":11990000,
+"image":"",
+"description":"Smartwatch theo dõi sức khỏe.",
+"specification":"45mm GPS Retina",
+"buyturn":21,
+"quantity":18,
+"brand_id":6,
+"category_id":13
+}
+]

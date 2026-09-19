@@ -9,13 +9,21 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // 👉 Giải pháp phòng thủ: Tự động quét tìm model sản phẩm dù viết hoa, viết thường hay số nhiều
       const ProductModel = models.products || models.Product || models.product;
+      const CartItemModel =
+        models.cart_items || models.CartItems || models.Cart_items;
 
-      // Chỉ liên kết nếu model cha thực sự tồn tại
       if (ProductModel) {
         product_variant_values.belongsTo(ProductModel, {
           foreignKey: "product_id",
+          as: "products",
+        });
+      }
+
+      if (CartItemModel) {
+        product_variant_values.hasMany(CartItemModel, {
+          foreignKey: "product_variant_value_id",
+          as: "cart_items",
         });
       }
     }
@@ -28,12 +36,19 @@ module.exports = (sequelize, DataTypes) => {
       old_price: DataTypes.DECIMAL,
       stock: DataTypes.INTEGER,
       sku: DataTypes.STRING,
+      image_url: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
     },
     {
       sequelize,
       modelName: "product_variant_values",
-      tableName: "product_variant_values", // Ghi đè tên bảng rõ ràng cho chuẩn cấu trúc
-      underscored: true, // Tự động map chuẩn gạch dưới (created_at / updated_at)
+      tableName: "product_variant_values",
+      timestamps: true,
+      underscored: true,
+      createdAt: "created_at",
+      updatedAt: "updated_at",
     },
   );
 

@@ -64,6 +64,13 @@ export async function Login(req, res) {
       .json({ message: "Tên hoặc mật khẩu không chính xác" });
   }
 
+  // Kiểm tra tài khoản bị vô hiệu hóa / khóa
+  if (user.is_locked === 1) {
+    return res
+      .status(403)
+      .json({ message: "Tài khoản của bạn đã bị vô hiệu hóa" });
+  }
+
   const passwordValid = password === user.password;
   if (!passwordValid) {
     return res.status(401).json({ message: "Mật khẩu không chính xác" });
@@ -84,23 +91,35 @@ export async function Login(req, res) {
 // Xem profile bản thân - USER, MANAGER, ADMIN
 export async function getProfile(req, res) {
   const user = await db.User.findByPk(req.user.id, {
-    attributes: ["id", "name", "email", "phone", "avatar"],
+    attributes: ["id", "name", "email", "phone", "avatar", "role", "is_locked"],
   });
 
   if (!user) {
     return res.status(404).json({ message: "User không tồn tại" });
   }
 
+  const userData = user.toJSON();
+
+  if (userData.avatar) {
+    if (
+      !userData.avatar.startsWith("http://") &&
+      !userData.avatar.startsWith("https://")
+    ) {
+      userData.avatar = `http://localhost:5000/api/images/${userData.avatar}`;
+    }
+  }
+
   return res.status(200).json({
     message: "Lấy profile thành công",
-    data: user,
+    data: userData,
   });
 }
 
 // Cập nhật thông tin bản thân - USER, MANAGER, ADMIN
 export async function updateUser(req, res) {
   const { id } = req.params;
-  const { name, avatar, oldPassword, newPassword } = req.body;
+  const body = req.body || {};
+  const { name, oldPassword, newPassword } = body;
 
   if (req.user.id != id) {
     return res
@@ -115,7 +134,12 @@ export async function updateUser(req, res) {
 
   const updateData = {};
   if (name !== undefined) updateData.name = name;
-  if (avatar !== undefined) updateData.avatar = getAvatarURL(avatar);
+
+  if (req.file) {
+    updateData.avatar = getAvatarURL(req.file.filename);
+  } else if (body.avatar !== undefined) {
+    updateData.avatar = body.avatar;
+  }
 
   if (oldPassword || newPassword) {
     if (!oldPassword || !newPassword) {
@@ -142,17 +166,23 @@ export async function updateUser(req, res) {
 
 // Lấy danh sách tất cả user - ADMIN only
 export async function getAllUsers(req, res) {
-  const { page = 1, limit = 15, role } = req.query;
+  const { page = 1, limit = 15, role, status } = req.query;
   const offset = (page - 1) * limit;
 
   const where = {};
   if (role) where.role = role;
 
+  // MẶC ĐỊNH: Nếu không truyền status="disabled", chỉ lấy các user HOẠT ĐỘNG
+  if (status === "disabled") {
+    where.is_locked = 1;
+  } else {
+    where.is_locked = 0; // Thêm dòng này để mặc định loại bỏ user bị vô hiệu hóa
+  }
+
   const { count, rows } = await db.User.findAndCountAll({
     where,
     limit: parseInt(limit),
     offset: parseInt(offset),
-    // 👉 ĐÃ SỬA: Thay "createdAt" thành "created_at" để khớp chuẩn snake_case mới
     order: [["created_at", "DESC"]],
   });
 
@@ -183,7 +213,7 @@ export async function getUserById(req, res) {
   });
 }
 
-// Xóa user - ADMIN only
+// Vô hiệu hóa user (Chuyển sang Soft Delete bằng cờ is_locked) - ADMIN only
 export async function deleteUser(req, res) {
   const { id } = req.params;
 
@@ -195,17 +225,17 @@ export async function deleteUser(req, res) {
   if (req.user.id == id) {
     return res
       .status(400)
-      .json({ message: "Không thể xóa tài khoản của chính mình" });
+      .json({ message: "Không thể vô hiệu hóa tài khoản của chính mình" });
   }
 
-  await db.User.destroy({ where: { id } });
+  // Đổi is_locked = 1 để vô hiệu hóa tài khoản thay vì xóa cứng khỏi DB
+  await db.User.update({ is_locked: 1 }, { where: { id } });
 
-  return res.status(200).json({ message: "Xóa user thành công" });
+  return res.status(200).json({ message: "Vô hiệu hóa user thành công" });
 }
 
 export async function getDashboardStats(req, res) {
   try {
-    // 1. Lấy mốc 00:00:00 ngày hôm nay theo giờ Việt Nam hệ thống (Tránh lệch múi giờ)
     const now = new Date();
     const today = new Date(
       now.getFullYear(),
@@ -217,7 +247,6 @@ export async function getDashboardStats(req, res) {
       0,
     );
 
-    // 2. Lấy ngày đầu tiên của tháng hiện tại
     const firstDayOfMonth = new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -228,10 +257,7 @@ export async function getDashboardStats(req, res) {
       0,
     );
 
-    // 3. Định nghĩa cửa sổ User đang hoạt động (ví dụ: tương tác trong vòng 15 phút qua)
     const activeTimeWindow = new Date(Date.now() - 15 * 60 * 1000);
-
-    // Xác định chính xác đối tượng Model User tránh bị undefined
     const UserModel = db.User || db.users;
 
     const [
@@ -245,10 +271,8 @@ export async function getDashboardStats(req, res) {
       db.products.count().catch(() => 0),
       db.orders.count().catch(() => 0),
 
-      // Đếm số user mới hôm nay
       UserModel.count({
         where: {
-          // Nếu bảng users dưới DB dùng chữ hoa thì đổi thành 'createdAt', dùng gạch dưới thì giữ nguyên 'created_at'
           created_at: { [Op.gte]: today },
         },
       }).catch((err) => {
@@ -258,10 +282,8 @@ export async function getDashboardStats(req, res) {
 
       UserModel.count().catch(() => 0),
 
-      // Đếm số user đang hoạt động
       UserModel.count({
         where: {
-          // Nếu bảng users dưới DB dùng chữ hoa thì đổi thành 'updatedAt', dùng gạch dưới thì giữ nguyên 'updated_at'
           updated_at: { [Op.gte]: activeTimeWindow },
           is_locked: 0,
         },
@@ -297,14 +319,10 @@ export async function getDashboardStats(req, res) {
   }
 }
 
-// Đổi role user - ADMIN only
+// Đổi role hoặc Khôi phục trạng thái vô hiệu hóa user - ADMIN only
 export async function updateUserRole(req, res) {
   const { id } = req.params;
-  const { role } = req.body;
-
-  if (![UserRole.USER, UserRole.MANAGER, UserRole.ADMIN].includes(role)) {
-    return res.status(400).json({ message: "Role không hợp lệ" });
-  }
+  const { role, is_locked, isBlocked, status } = req.body;
 
   const user = await db.User.findByPk(id);
   if (!user) {
@@ -314,14 +332,34 @@ export async function updateUserRole(req, res) {
   if (req.user.id == id) {
     return res
       .status(400)
-      .json({ message: "Không thể đổi role của chính mình" });
+      .json({ message: "Không thể thao tác trên tài khoản của chính mình" });
   }
 
-  await db.User.update({ role }, { where: { id } });
+  const updateData = {};
+
+  if (role) {
+    if (![UserRole.USER, UserRole.MANAGER, UserRole.ADMIN].includes(role)) {
+      return res.status(400).json({ message: "Role không hợp lệ" });
+    }
+    updateData.role = role;
+  }
+
+  // Khôi phục hoặc vô hiệu hóa tài khoản tùy theo cờ truyền từ FE
+  if (is_locked !== undefined) {
+    updateData.is_locked = is_locked;
+  } else if (isBlocked !== undefined) {
+    updateData.is_locked = isBlocked ? 1 : 0;
+  } else if (status === "active") {
+    updateData.is_locked = 0;
+  } else if (status === "disabled") {
+    updateData.is_locked = 1;
+  }
+
+  await db.User.update(updateData, { where: { id } });
   const updatedUser = await db.User.findByPk(id);
 
   return res.status(200).json({
-    message: "Cập nhật role thành công",
+    message: "Cập nhật thông tin thành công",
     data: new ResponseUser(updatedUser),
   });
 }

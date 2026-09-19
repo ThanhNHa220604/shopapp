@@ -41,8 +41,11 @@ module.exports = (sequelize, DataTypes) => {
     {
       sequelize,
       modelName: "ProductAttributes",
-      tableName: "productattributes",
-      underscored: true, // Bật để tự động đồng bộ kiểu gạch dưới (created_at/updated_at)
+      tableName: "productattributes", // Khớp với tên viết liền trong DB của bạn
+      timestamps: true,               // 👈 Bật timestamps
+      underscored: true,              // 👈 Bật underscored
+      createdAt: "created_at",        // 👈 Ép dùng cột này
+      updatedAt: "updated_at",
     },
   );
 

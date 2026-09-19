@@ -66,12 +66,35 @@ export async function getCategoryById(req, res) {
 }
 
 export async function insertCategory(req, res) {
-  const category = await db.categories.create(req.body);
+  const { name } = req.body;
 
-  console.log("Thêm category thành công:", category.toJSON());
+  if (!name || !name.trim()) {
+    return res.status(400).json({
+      message: "Tên danh mục không được để trống",
+    });
+  }
+
+  // 🌟 SỬA LỖI: dùng findOrCreate thay vì create() thẳng — nếu danh
+  // mục đã tồn tại (trùng tên), trả về bản ghi đã có sẵn thay vì báo
+  // lỗi "Duplicate entry". Điều này xử lý đúng cả trường hợp frontend
+  // gửi lại tên 1 danh mục vừa tạo ở nơi khác trong cùng phiên làm
+  // việc, mà danh sách categories trên trình duyệt chưa kịp cập nhật.
+  const [category, created] = await db.categories.findOrCreate({
+    where: { name: name.trim() },
+    defaults: { ...req.body, name: name.trim() },
+  });
+
+  console.log(
+    created
+      ? "Thêm category mới thành công:"
+      : "Category đã tồn tại, dùng lại bản ghi cũ:",
+    category.toJSON(),
+  );
 
   return res.status(200).json({
-    message: "Thêm mới category thành công",
+    message: created
+      ? "Thêm mới category thành công"
+      : "Danh mục đã tồn tại, đã sử dụng lại danh mục có sẵn",
     data: category,
   });
 }

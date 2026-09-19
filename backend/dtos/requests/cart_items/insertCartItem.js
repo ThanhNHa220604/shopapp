@@ -4,7 +4,8 @@ class InsertCartItemRequest {
   constructor(data) {
     this.cart_id = data.cart_id;
     this.product_id = data.product_id;
-    this.quantity = data.quantity;
+    this.quanity = data.quanity || data.quantity;
+    this.product_variant_value_id = data.product_variant_value_id;
   }
 
   static validate(data) {
@@ -13,7 +14,11 @@ class InsertCartItemRequest {
 
       product_id: Joi.number().integer().required(),
 
-      quanity: Joi.number().integer().min(0).required(),
+      quanity: Joi.number().integer().min(0).optional(),
+      quantity: Joi.number().integer().min(0).optional(),
+
+      // 🌟 CHỖ ĐÃ SỬA: Thay .nullable() bằng .allow(null) chuẩn cú pháp của Joi
+      product_variant_value_id: Joi.number().integer().allow(null).optional(),
     });
 
     return schema.validate(data);

@@ -1,0 +1,8 @@
+node_modules/
+**/node_modules/
+target/
+**/target/
+.idea/
+.vscode/
+*.log
+vendor/

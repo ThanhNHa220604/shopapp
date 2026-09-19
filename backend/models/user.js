@@ -9,13 +9,30 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // define association here
-      User.hasMany(models.orders, {
-        foreignKey: "user_id",
-      });
-      User.hasMany(models.feedback, {
-        foreignKey: "user_id",
-      });
+      // 1. Tìm kiếm linh hoạt Model đơn hàng (thử cả orders, Order, Orders)
+      const OrderModel = models.orders || models.Order || models.Orders;
+      if (OrderModel) {
+        User.hasMany(OrderModel, {
+          foreignKey: "user_id",
+        });
+      } else {
+        console.warn(
+          "⚠️ Cảnh báo: User không tìm thấy Model tương ứng cho bảng orders.",
+        );
+      }
+
+      // 2. Tìm kiếm linh hoạt Model đánh giá (thử cả feedback, feedbacks, Feedbacks)
+      const FeedbackModel =
+        models.feedback || models.feedbacks || models.Feedback;
+      if (FeedbackModel) {
+        User.hasMany(FeedbackModel, {
+          foreignKey: "user_id",
+        });
+      } else {
+        console.warn(
+          "⚠️ Cảnh báo: User không tìm thấy Model tương ứng cho bảng feedback.",
+        );
+      }
     }
   }
 
@@ -25,7 +42,7 @@ module.exports = (sequelize, DataTypes) => {
       password: DataTypes.STRING,
       name: DataTypes.STRING,
       role: DataTypes.INTEGER,
-      avatar: DataTypes.STRING,
+      avatar: DataTypes.TEXT,
       phone: DataTypes.STRING,
       is_locked: DataTypes.INTEGER,
       password_changed_at: DataTypes.DATE,

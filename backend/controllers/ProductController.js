@@ -3,7 +3,7 @@ const db = require("../models");
 const Op = Sequelize.Op;
 
 // =========================================================================
-// 1. LẤY DANH SÁCH SẢN PHẨM
+// 1. LẤY DANH SÁCH SẢN PHẨM (Tích hợp kiểm tra Flash Sale)
 // =========================================================================
 async function getProducts(req, res) {
   const {
@@ -12,16 +12,24 @@ async function getProducts(req, res) {
     category,
     all,
     pageSize: customPageSize,
+    user_id,
   } = req.query;
 
   const isViewAll = all === "true";
+  const parsedPage = Math.max(1, parseInt(page) || 1);
   const pageSize = isViewAll ? null : parseInt(customPageSize) || 15;
-  const offset = isViewAll ? null : (page - 1) * pageSize;
+  const offset = isViewAll ? null : (parsedPage - 1) * pageSize;
 
-  let whereClause = {};
+  let whereClause = { is_deleted: 0 };
+
+  const parsedUserId = user_id ? parseInt(user_id) : null;
+  if (parsedUserId) {
+    whereClause.user_id = parsedUserId;
+  }
 
   if (search.trim() !== "") {
     whereClause = {
+      ...whereClause,
       [Op.or]: [
         { name: { [Op.like]: `%${search}%` } },
         { description: { [Op.like]: `%${search}%` } },
@@ -30,69 +38,258 @@ async function getProducts(req, res) {
     };
   }
 
-  if (category) {
+  if (category && category.trim() !== "") {
+    const cleanCategory = category.trim().toLowerCase().replace(/s$/, "");
     const categoryRecord = await db.categories.findOne({
-      where: { name: category },
+      where: { name: { [Op.like]: `%${cleanCategory}%` } },
     });
     if (categoryRecord) {
       whereClause.category_id = categoryRecord.id;
+    } else {
+      return res.status(200).json({
+        data: [],
+        total: 0,
+        page: parsedPage,
+        pageSize: pageSize || 0,
+      });
     }
   }
 
   try {
-    const [products, totalProducts] = await Promise.all([
-      db.products.findAll({
-        where: whereClause,
-        limit: pageSize,
-        offset: offset,
-        order: [["id", "DESC"]],
-        include: [
-          {
-            model: db.ProductAttributes,
-            as: "ProductAttributes",
-            include: [{ model: db.Attributes }],
-          },
-          {
-            model: db.product_variant_values,
-            as: "product_variant_values",
-          },
-        ],
-      }),
-      db.products.count({ where: whereClause }),
-    ]);
+    const now = new Date(); // Thời gian hiện tại để so sánh Flash Sale
+
+    // 🔑 QUAN TRỌNG: Thêm `distinct: true` để Sequelize tính đúng số lượng sản phẩm khi JOIN các bảng Flash Sale
+    const { rows: products, count: total } = await db.products.findAndCountAll({
+      where: whereClause,
+      distinct: true, // 🌟 Khắc phục lỗi đếm sai tổng số bản ghi do INNER/LEFT JOIN
+      limit: pageSize || undefined,
+      offset: offset || undefined,
+      order: [["id", "DESC"]],
+      include: [
+        { model: db.categories, as: "category", attributes: ["name"] },
+        { model: db.brands, as: "brand", attributes: ["name"] },
+        {
+          model: db.flash_sale_products || db.FlashSaleProducts,
+          as: "flash_sale_products",
+          required: false,
+          include: [
+            {
+              model: db.flash_sales || db.FlashSales,
+              as: "flash_sale",
+              where: {
+                status: 1,
+                start_time: { [Op.lte]: now },
+                end_time: { [Op.gte]: now },
+              },
+              required: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    // Format lại dữ liệu sản phẩm
+    const formattedProducts = products.map((p) => {
+      const prodJSON = p.toJSON ? p.toJSON() : p;
+
+      const activeSaleProduct = prodJSON.flash_sale_products?.find(
+        (fsp) => fsp.flash_sale && fsp.flash_sale.status === 1,
+      );
+
+      if (activeSaleProduct) {
+        prodJSON.is_flash_sale = true;
+        prodJSON.flash_sale_price = parseFloat(
+          activeSaleProduct.flash_sale_price,
+        );
+        prodJSON.flash_sale_stock = activeSaleProduct.flash_sale_stock;
+      } else {
+        prodJSON.is_flash_sale = false;
+        prodJSON.flash_sale_price = null;
+      }
+
+      return prodJSON;
+    });
 
     return res.status(200).json({
-      message: "Lấy danh sách sản phẩm thành công",
-      data: products,
-      currentPage: Number(page),
-      totalPages: isViewAll ? 1 : Math.ceil(totalProducts / pageSize),
-      totalProducts,
+      data: formattedProducts,
+      total: total,
+      page: parsedPage,
+      pageSize: pageSize || total,
+      totalPages: Math.ceil(total / (pageSize || total)) || 1,
     });
   } catch (error) {
-    console.error("LỖI GET PRODUCTS:", error);
-    return res
-      .status(500)
-      .json({ message: "Lỗi hệ thống khi lấy sản phẩm", error: error.message });
+    if (error.message.includes("Unknown column") && user_id) {
+      try {
+        const { rows: allProducts } = await db.products.findAndCountAll({
+          where: { is_deleted: 0 },
+          order: [["id", "DESC"]],
+          include: [
+            { model: db.categories, as: "category", attributes: ["name"] },
+            { model: db.brands, as: "brand", attributes: ["name"] },
+          ],
+        });
+
+        const filteredProducts = allProducts.filter(
+          (p) => p.user_id == user_id || !p.user_id,
+        );
+
+        return res.status(200).json({
+          data: filteredProducts,
+          total: filteredProducts.length,
+          page: 1,
+          pageSize: filteredProducts.length,
+          totalPages: 1,
+        });
+      } catch (innerErr) {
+        return res.status(500).json({ error: innerErr.message });
+      }
+    }
+    return res.status(500).json({ error: error.message });
   }
 }
 
 // =========================================================================
-// 2. LẤY CHI TIẾT MỘT SẢN PHẨM (ĐÃ KHẮP PHỤC TRIỆT ĐỂ LỖI 500)
+// 1.5. LẤY SẢN PHẨM CỦA MANAGER ĐANG ĐĂNG NHẬP (dùng cho chọn SP áp voucher, v.v.)
+//      - ADMIN: lấy tất cả sản phẩm
+//      - MANAGER: chỉ lấy sản phẩm do chính họ đăng (user_id = req.user.id)
+//      req.user được gắn bởi middleware requireRoles (đọc từ JWT), KHÔNG tin
+//      vào bất kỳ user_id nào client tự gửi lên qua query/body.
+// =========================================================================
+function resolveRoleStr(user) {
+  const raw =
+    user.role ??
+    user.role_id ??
+    user.roleId ??
+    user.Role?.name ??
+    user.Role?.id ??
+    user.role_name;
+  return String(raw ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+async function getMyProducts(req, res) {
+  try {
+    const currentUser = req.user;
+    if (!currentUser) {
+      return res.status(401).json({ message: "Không thể xác thực người dùng" });
+    }
+
+    const roleStr = resolveRoleStr(currentUser);
+    // Theo hệ thống thực tế: ADMIN = 3, MANAGER = 2, USER = 1
+    const isAdmin = roleStr === "3" || roleStr === "ADMIN";
+
+    const { search = "" } = req.query;
+    let whereClause = { is_deleted: 0 };
+
+    if (!isAdmin) {
+      whereClause.user_id = currentUser.id;
+    }
+
+    if (search.trim() !== "") {
+      whereClause = {
+        ...whereClause,
+        [Op.or]: [
+          { name: { [Op.like]: `%${search}%` } },
+          { description: { [Op.like]: `%${search}%` } },
+        ],
+      };
+    }
+
+    const products = await db.products.findAll({
+      where: whereClause,
+      order: [["id", "DESC"]],
+      include: [
+        { model: db.categories, as: "category", attributes: ["name"] },
+        { model: db.brands, as: "brand", attributes: ["name"] },
+      ],
+    });
+
+    return res.status(200).json({
+      data: products,
+      total: products.length,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+// =========================================================================
+// 2. LẤY CHI TIẾT MỘT SẢN PHẨM (Đã cập nhật kiểm tra Flash Sale)
 // =========================================================================
 async function getProductById(req, res) {
   const { id } = req.params;
 
   try {
+    const now = new Date(); // Lấy thời gian hiện tại
+
     const product = await db.products.findByPk(id, {
       include: [
-        { model: db.product_image, as: "product_image" },
+        {
+          model: db.product_image,
+          as: "product_image",
+          attributes: [
+            "id",
+            "product_id",
+            "imageurl",
+            ["created_at", "created_at"],
+            ["updated_at", "updated_at"],
+          ],
+        },
         {
           model: db.ProductAttributes,
           as: "ProductAttributes",
-          // Đã loại bỏ 'as: "Attribute"' sai lệch để khớp hoàn toàn cấu trúc model định nghĩa
-          include: [{ model: db.Attributes }],
+          attributes: [
+            "id",
+            "product_id",
+            "attribute_id",
+            "value",
+            ["created_at", "created_at"],
+            ["updated_at", "updated_at"],
+          ],
+          include: [
+            {
+              model: db.Attributes || db.attributes,
+              attributes: ["id", "name", "created_at", "updated_at"],
+            },
+          ],
         },
-        { model: db.product_variant_values, as: "product_variant_values" },
+        {
+          model:
+            db.product_variant_values ||
+            db.ProductVariantValues ||
+            db.productVariantValues,
+          as: "product_variant_values",
+          attributes: [
+            "id",
+            "product_id",
+            "price",
+            "old_price",
+            "stock",
+            "sku",
+            "image_url",
+            ["created_at", "created_at"],
+            ["updated_at", "updated_at"],
+          ],
+        },
+        // 🌟 NÂNG CẤP QUAN TRỌNG: Include thông tin Flash Sale vào Chi Tiết Sản Phẩm
+        {
+          model: db.flash_sale_products || db.FlashSaleProducts,
+          as: "flash_sale_products",
+          required: false,
+          include: [
+            {
+              model: db.flash_sales || db.FlashSales,
+              as: "flash_sale",
+              where: {
+                status: 1, // Chiến dịch kích hoạt
+                start_time: { [Op.lte]: now }, // Đã đến giờ chạy
+                end_time: { [Op.gte]: now }, // Chưa hết giờ
+              },
+              required: false,
+            },
+          ],
+        },
       ],
     });
 
@@ -100,37 +297,49 @@ async function getProductById(req, res) {
       return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
     }
 
-    return res.status(200).json({
-      message: "Lấy sản phẩm thành công",
-      data: product,
-    });
-  } catch (error) {
-    console.error("====== SẬP HỆ THỐNG TẠI GET_PRODUCT_BY_ID ======");
-    console.error(error);
-    console.error("=================================================");
+    // Chuyển instance Sequelize về dạng JSON thuần
+    const productData = product.toJSON();
 
-    // Phương án dự phòng khẩn cấp nếu các mối quan hệ khác vẫn lỗi: Lấy dữ liệu thô của sản phẩm ra trước
-    try {
-      const backupProduct = await db.products.findByPk(id);
-      if (backupProduct) {
-        return res.status(200).json({
-          message: "Lấy sản phẩm thành công (Bản đơn giản)",
-          data: backupProduct,
-        });
-      }
-    } catch (innerError) {
-      console.error("Lỗi dự phòng thất bại:", innerError);
+    // Tìm kiếm chiến dịch Flash Sale hợp lệ nhất
+    const activeSaleProduct = productData.flash_sale_products?.find(
+      (fsp) => fsp.flash_sale && fsp.flash_sale.status === 1,
+    );
+
+    if (activeSaleProduct) {
+      productData.is_flash_sale = true;
+      productData.flash_sale_price = parseFloat(
+        activeSaleProduct.flash_sale_price,
+      );
+      productData.flash_sale_stock = activeSaleProduct.flash_sale_stock;
+      productData.flash_sale_sold = activeSaleProduct.flash_sale_sold;
+    } else {
+      productData.is_flash_sale = false;
+      productData.flash_sale_price = null;
     }
 
+    return res.status(200).json({
+      message: "Lấy sản phẩm thành công",
+      data: productData,
+    });
+  } catch (error) {
+    console.error("====== LỖI LẤY CHI TIẾT SẢN PHẨM ======");
+    console.error(error);
+    console.error("=========================================");
+
     return res.status(500).json({
-      message: "Lỗi hệ thống xử lý chi tiết sản phẩm",
+      message: "Lỗi liên kết dữ liệu cấu trúc include",
       error: error.message,
     });
   }
 }
 
 // =========================================================================
-// 3. XÓA SẢN PHẨM
+// 3. XÓA (ẨN) SẢN PHẨM — SOFT DELETE
+//    Không xóa cứng khỏi DB nữa. Chỉ đánh dấu is_deleted = 1 để sản phẩm
+//    biến mất khỏi trang bán hàng / danh sách quản lý, trong khi đơn hàng
+//    cũ vẫn tham chiếu được đầy đủ thông tin sản phẩm (product_id không
+//    còn bị lỗi do bản ghi gốc vẫn tồn tại, cùng ProductAttributes,
+//    product_variant_values, product_image, ...).
 // =========================================================================
 async function deleteProduct(req, res) {
   const { id } = req.params;
@@ -139,34 +348,55 @@ async function deleteProduct(req, res) {
     if (!product)
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
 
-    const orderDetails = await db.order_detail.findAll({
-      where: { product_id: id },
-    });
-    if (orderDetails.length > 0) {
+    if (product.is_deleted) {
       return res
         .status(400)
-        .json({
-          message: "Không thể xóa sản phẩm vì đã tồn tại trong đơn hàng",
-        });
+        .json({ message: "Sản phẩm đã ở trạng thái ẩn/ngừng bán" });
     }
 
-    if (db.ProductAttributes)
-      await db.ProductAttributes.destroy({ where: { product_id: id } });
-    if (db.product_variant_values)
-      await db.product_variant_values.destroy({ where: { product_id: id } });
-    if (db.newdetails)
-      await db.newdetails.destroy({ where: { product_id: id } });
-    if (db.product_image)
-      await db.product_image.destroy({ where: { product_id: id } });
+    await product.update({ is_deleted: 1 });
 
-    await db.products.destroy({ where: { id } });
-    return res.status(200).json({ message: "Xóa sản phẩm thành công" });
+    return res
+      .status(200)
+      .json({ message: "Đã ẩn/ngừng bán sản phẩm thành công" });
   } catch (error) {
     return res
       .status(500)
-      .json({ message: "Lỗi khi xóa sản phẩm", error: error.message });
+      .json({ message: "Lỗi khi ẩn sản phẩm", error: error.message });
   }
 }
+
+// =========================================================================
+// 3.5. KHÔI PHỤC SẢN PHẨM ĐÃ ẨN
+//      Dùng cho trang "Thùng rác" / danh sách sản phẩm đã ngừng bán, để
+//      manager/admin đưa sản phẩm quay lại trang bán hàng.
+// =========================================================================
+async function restoreProduct(req, res) {
+  const { id } = req.params;
+  try {
+    const product = await db.products.findByPk(id);
+    if (!product)
+      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
+
+    if (!product.is_deleted) {
+      return res
+        .status(400)
+        .json({ message: "Sản phẩm hiện không ở trạng thái đã ẩn" });
+    }
+
+    await product.update({ is_deleted: 0 });
+
+    return res
+      .status(200)
+      .json({ message: "Đã khôi phục sản phẩm thành công" });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Lỗi khi khôi phục sản phẩm", error: error.message });
+  }
+}
+
+
 
 // =========================================================================
 // 4. CẬP NHẬT SẢN PHẨM
@@ -177,6 +407,8 @@ async function updateProduct(req, res) {
     attributes = [],
     variant_values = [],
     name,
+    brand_name, // Nhận brand_name từ frontend gửi lên
+    category_name, // Nhận category_name từ frontend gửi lên
     ...productData
   } = req.body;
 
@@ -195,8 +427,35 @@ async function updateProduct(req, res) {
 
     const transaction = await db.sequelize.transaction();
     try {
+      // 1. XỬ LÝ TỰ ĐỘNG TẠO BRAND NẾU NGƯỜI DÙNG NHẬP NAME MỚI
+      if (brand_name && brand_name.trim() !== "") {
+        // findOrCreate: Tìm xem tên brand này có chưa, chưa có thì tự tạo mới trong database
+        const [newBrand] = await db.brands.findOrCreate({
+          where: { name: brand_name.trim() },
+          transaction,
+        });
+        // Sau khi tìm hoặc tạo thành công, gán ID của brand đó vào data để chuẩn bị update sản phẩm
+        productData.brand_id = newBrand.id;
+      } else if (req.body.brand_id) {
+        // Nếu không gửi name mà gửi brand_id có sẵn, giữ nguyên brand_id
+        productData.brand_id = req.body.brand_id;
+      }
+
+      // 2. XỬ LÝ TỰ ĐỘNG TẠO CATEGORY NẾU NGƯỜI DÙNG NHẬP NAME MỚI
+      if (category_name && category_name.trim() !== "") {
+        const [newCategory] = await db.categories.findOrCreate({
+          where: { name: category_name.trim() },
+          transaction,
+        });
+        productData.category_id = newCategory.id;
+      } else if (req.body.category_id) {
+        productData.category_id = req.body.category_id;
+      }
+
+      // 3. TIẾN HÀNH CẬP NHẬT SẢN PHẨM (Lúc này brand_id chắc chắn đã là một con số, không lo bị null)
       await product.update({ name, ...productData }, { transaction });
 
+      // --- Giữ nguyên logic xử lý attributes cũ của bạn ---
       for (const attr of attributes) {
         const [attribute] = await db.Attributes.findOrCreate({
           where: { name: attr.name },
@@ -217,33 +476,61 @@ async function updateProduct(req, res) {
         }
       }
 
+      // --- Giữ nguyên logic xử lý variant_values cũ của bạn ---
       if (variant_values.length > 0) {
         await db.product_variant_values.destroy({
           where: { product_id: id },
           transaction,
         });
+
+        let totalStock = 0; // 🌟 Tổng kho sẽ được tính lại từ chính các biến thể
+
         for (const variantData of variant_values) {
-          const variantValueIds = [];
-          for (const value of variantData.variant_combination) {
-            const variantValue = await db.variant_values.findOne({
-              where: { value },
-              transaction,
-            });
-            if (variantValue) variantValueIds.push(variantValue.id);
-          }
-          const sku = variantValueIds.sort((a, b) => a - b).join("-");
+          // 🌟 SỬA LỖI GỐC: KHÔNG tra cứu ID qua bảng "variant_values" cũ
+          // nữa (findOne theo từng giá trị) — bảng đó chỉ có vài dòng
+          // seed cũ ("128GB","Đen"...), nên bất kỳ Size/Color mới nào
+          // (vd "Standard","Đỏ") đều không tìm thấy, bị bỏ qua âm thầm,
+          // khiến SKU cuối cùng chỉ còn sót lại ID số của những giá trị
+          // trùng ngẫu nhiên với dữ liệu cũ (đây chính là nguyên nhân
+          // gây ra SKU sai như "2", "13" thay vì "Standard-Đen").
+          // Giờ lưu thẳng chuỗi Size-Color làm SKU, không qua ID nào cả.
+          const combinationParts = Array.isArray(
+            variantData.variant_combination,
+          )
+            ? variantData.variant_combination
+                .map((v) => String(v).trim())
+                .filter(Boolean)
+            : [];
+          const sku =
+            combinationParts.length > 0
+              ? combinationParts.join("-")
+              : `variant-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+          const stock = Number(variantData.stock) || 0;
+          totalStock += stock;
+
           await db.product_variant_values.create(
             {
               product_id: id,
               price: variantData.price,
               old_price: variantData.old_price || null,
-              stock: variantData.stock || 0,
+              stock,
               sku,
+              // 🌟 THÊM: trước đây field này bị bỏ sót hoàn toàn khi tạo
+              // record, khiến ảnh riêng của biến thể không bao giờ được
+              // lưu vào DB dù frontend đã gửi đúng.
+              image_url: variantData.image_url || null,
             },
             { transaction },
           );
         }
+
+        // 🌟 Ghi đè tổng kho của sản phẩm bằng tổng thật vừa tính từ
+        // các biến thể — không dùng giá trị "quanity" client gửi lên,
+        // để tránh lệch số khi tăng/giảm số lượng từng biến thể.
+        await product.update({ quanity: totalStock }, { transaction });
       }
+
       await transaction.commit();
       return res.status(200).json({ message: "Cập nhật sản phẩm thành công" });
     } catch (err) {
@@ -259,85 +546,201 @@ async function updateProduct(req, res) {
 
 // =========================================================================
 // 5. THÊM MỚI SẢN PHẨM
-// =========================================================================
 async function insertProduct(req, res) {
+  console.log("====== DATA FRONTEND CỦA MANAGER GỬI LÊN ======");
+  console.log(req.body);
+  console.log("====================================");
+
   const {
     attributes = [],
     variants = [],
     variant_values = [],
     name,
-    ...productData
+    price,
+    oldprice,
+    image,
+    description,
+    specification,
+    buyturn,
+    quanity,
+    category_id,
+    brand_id,
+    brand_name,
+    category_name,
+    user_id, // Đã thêm: Nhận user_id từ body Frontend gửi lên
   } = req.body;
-  const { category_id, brand_id } = productData;
 
   try {
-    const categoryExists = await db.categories.findByPk(category_id);
-    if (!categoryExists)
-      return res
-        .status(400)
-        .json({ message: `Category ID ${category_id} không tồn tại` });
+    // 1. CHUẨN HÓA CATEGORY
+    let finalCategoryId = category_id;
+    if (!finalCategoryId && category_name) {
+      const [category] = await db.categories.findOrCreate({
+        where: { name: category_name.trim() },
+        defaults: { image: "" },
+      });
+      finalCategoryId = category.id;
+    } else {
+      const categoryExists = await db.categories.findByPk(finalCategoryId);
+      if (!categoryExists)
+        return res
+          .status(400)
+          .json({ message: `Category ID ${finalCategoryId} không tồn tại` });
+    }
 
-    const brandExists = await db.brands.findByPk(brand_id);
-    if (!brandExists)
-      return res
-        .status(400)
-        .json({ message: `Brand ID ${brand_id} không tồn tại` });
+    // 2. CHUẨN HÓA BRAND
+    let finalBrandId = brand_id;
+    if (!finalBrandId && brand_name) {
+      const [brand] = await db.brands.findOrCreate({
+        where: { name: brand_name.trim() },
+      });
+      finalBrandId = brand.id;
+    } else {
+      const brandExists = await db.brands.findByPk(finalBrandId);
+      if (!brandExists)
+        return res
+          .status(400)
+          .json({ message: `Brand ID ${finalBrandId} không tồn tại` });
+    }
 
+    // 3. KIỂM TRA TRÙNG TÊN SẢN PHẨM
     const productExists = await db.products.findOne({ where: { name } });
     if (productExists)
       return res.status(400).json({ message: "Tên sản phẩm đã tồn tại" });
 
+    // 4. KHỞI TẠO TRANSACTION
     const transaction = await db.sequelize.transaction();
     try {
       const product = await db.products.create(
-        { ...productData, name },
+        {
+          name,
+          price,
+          oldprice,
+          image,
+          description,
+          specification,
+          buyturn,
+          quanity,
+          category_id: finalCategoryId,
+          brand_id: finalBrandId,
+          user_id, // Đã thêm: Ghi nhận ID người tạo sản phẩm vào Database
+        },
         { transaction },
       );
+
       const createdAttributes = [];
 
+      // 5. XỬ LÝ THÔNG SỐ KỸ THUẬT (SQL THUẦN)
       for (const attributeData of attributes) {
-        const [attribute] = await db.Attributes.findOrCreate({
-          where: { name: attributeData.name },
-          transaction,
-        });
-        await db.ProductAttributes.create(
+        const attrName = attributeData.name.trim();
+
+        const [existingAttribute] = await db.sequelize.query(
+          "SELECT id FROM attributes WHERE name = :name LIMIT 1",
           {
-            product_id: product.id,
-            attribute_id: attribute.id,
-            value: attributeData.value,
+            replacements: { name: attrName },
+            type: db.sequelize.QueryTypes.SELECT,
+            transaction,
           },
-          { transaction },
         );
+
+        let attributeId;
+        if (existingAttribute) {
+          attributeId = existingAttribute.id;
+        } else {
+          const [insertedAttributeId] = await db.sequelize.query(
+            "INSERT INTO attributes (name, created_at, updated_at) VALUES (:name, NOW(), NOW())",
+            {
+              replacements: { name: attrName },
+              type: db.sequelize.QueryTypes.INSERT,
+              transaction,
+            },
+          );
+          attributeId = insertedAttributeId;
+        }
+
+        await db.sequelize.query(
+          "INSERT INTO productattributes (product_id, attribute_id, value, created_at, updated_at) VALUES (:product_id, :attribute_id, :value, NOW(), NOW())",
+          {
+            replacements: {
+              product_id: product.id,
+              attribute_id: attributeId,
+              value: attributeData.value,
+            },
+            type: db.sequelize.QueryTypes.INSERT,
+            transaction,
+          },
+        );
+
         createdAttributes.push({
-          name: attribute.name,
+          name: attrName,
           value: attributeData.value,
         });
       }
 
+      // 6. XỬ LÝ CẤU HÌNH BIẾN THỂ (SQL THUẦN)
+      const valueToIdMap = new Map();
       for (const variant of variants) {
-        const [variantEntry] = await db.variants.findOrCreate({
-          where: { name: variant.name },
-          transaction,
-        });
-        for (const value of variant.values) {
-          await db.variant_values.findOrCreate({
-            where: { value, variant_id: variantEntry.id },
+        const variantName = variant.name.trim();
+
+        const [existingVariant] = await db.sequelize.query(
+          "SELECT id FROM variants WHERE name = :name LIMIT 1",
+          {
+            replacements: { name: variantName },
+            type: db.sequelize.QueryTypes.SELECT,
             transaction,
-          });
+          },
+        );
+
+        let variantId;
+        if (existingVariant) {
+          variantId = existingVariant.id;
+        } else {
+          const [insertedVariantId] = await db.sequelize.query(
+            "INSERT INTO variants (name, created_at, updated_at) VALUES (:name, NOW(), NOW())",
+            {
+              replacements: { name: variantName },
+              type: db.sequelize.QueryTypes.INSERT,
+              transaction,
+            },
+          );
+          variantId = insertedVariantId;
+        }
+
+        for (const value of variant.values) {
+          const valTrim = value.trim();
+
+          const [existingValue] = await db.sequelize.query(
+            "SELECT id FROM variant_values WHERE value = :value AND variant_id = :variant_id LIMIT 1",
+            {
+              replacements: { value: valTrim, variant_id: variantId },
+              type: db.sequelize.QueryTypes.SELECT,
+              transaction,
+            },
+          );
+
+          let variantValueId;
+          if (existingValue) {
+            variantValueId = existingValue.id;
+          } else {
+            const [insertedValueId] = await db.variant_values
+              .create(
+                { value: valTrim, variant_id: variantId },
+                { transaction },
+              )
+              .then((res) => [res.id]);
+            variantValueId = insertedValueId;
+          }
+
+          valueToIdMap.set(`${variantName}:${valTrim}`, variantValueId);
         }
       }
 
+      // 7. XỬ LÝ SẢN PHẨM BIẾN THỂ VÀ HÌNH ẢNH RIÊNG (Lưu chữ thay vì ID số)
       const createdVariantValues = [];
       for (const variantData of variant_values) {
-        const variantValueIds = [];
-        for (const value of variantData.variant_combination) {
-          const variantValue = await db.variant_values.findOne({
-            where: { value },
-            transaction,
-          });
-          if (variantValue) variantValueIds.push(variantValue.id);
-        }
-        const sku = variantValueIds.sort((a, b) => a - b).join("-");
+        const sku = variantData.variant_combination
+          .map((str) => str.trim().replace(/\s+/g, ""))
+          .join("-");
+
         const createdVariant = await db.product_variant_values.create(
           {
             product_id: product.id,
@@ -345,24 +748,29 @@ async function insertProduct(req, res) {
             old_price: variantData.old_price || null,
             stock: variantData.stock || 0,
             sku,
+            image_url: variantData.image_url || null,
           },
           { transaction },
         );
+
         createdVariantValues.push({
+          id: createdVariant.id,
           sku,
           price: createdVariant.price,
           old_price: createdVariant.old_price,
           stock: createdVariant.stock,
+          image_url: createdVariant.image_url,
         });
       }
 
       await transaction.commit();
+
       return res.status(201).json({
-        message: "Thêm mới sản phẩm thành công",
+        message: "Manager đã thêm mới sản phẩm thành công",
         data: {
           ...product.get({ plain: true }),
           attributes: createdAttributes,
-          variant_values: createdVariantValues,
+          product_variant_values: createdVariantValues,
         },
       });
     } catch (err) {
@@ -372,14 +780,58 @@ async function insertProduct(req, res) {
   } catch (error) {
     return res
       .status(500)
-      .json({ message: "Lỗi khi thêm sản phẩm", error: error.message });
+      .json({ message: "Lỗi hệ thống khi thêm hàng", error: error.message });
+  }
+}
+
+
+async function getDeletedProducts(req, res) {
+  try {
+    const currentUser = req.user;
+    if (!currentUser) {
+      return res.status(401).json({ message: "Không thể xác thực người dùng" });
+    }
+
+    const { search = "" } = req.query;
+    // 🌟 Luôn lọc theo user_id của người đăng, kể cả admin — mỗi người
+    // chỉ thấy sản phẩm đã ẩn do chính mình đăng, không xem chéo được.
+    let whereClause = { is_deleted: 1, user_id: currentUser.id };
+
+    if (search.trim() !== "") {
+      whereClause = {
+        ...whereClause,
+        [Op.or]: [
+          { name: { [Op.like]: `%${search}%` } },
+          { description: { [Op.like]: `%${search}%` } },
+        ],
+      };
+    }
+
+    const products = await db.products.findAll({
+      where: whereClause,
+      order: [["id", "DESC"]],
+      include: [
+        { model: db.categories, as: "category", attributes: ["name"] },
+        { model: db.brands, as: "brand", attributes: ["name"] },
+      ],
+    });
+
+    return res.status(200).json({
+      data: products,
+      total: products.length,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 }
 
 module.exports = {
   getProducts,
+  getMyProducts,
   getProductById,
   insertProduct,
   deleteProduct,
+  restoreProduct,
   updateProduct,
+  getDeletedProducts,
 };

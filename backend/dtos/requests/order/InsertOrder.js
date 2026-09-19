@@ -17,8 +17,20 @@ class InsertOrderRequest {
       status: Joi.number().integer().greater(0).required(),
 
       note: Joi.string().allow("").optional(),
-      phone: Joi.string().pattern(/^[0-9]+$/).required(),
-      address: Joi.string().allow('').optional(),
+      phone: Joi.string()
+        .pattern(/^[0-9]+$/)
+        .required(),
+      address: Joi.alternatives()
+        .try(
+          Joi.string().allow(""),
+          Joi.object({
+            street: Joi.string().allow(""),
+            ward: Joi.string().allow(""),
+            district: Joi.string().allow(""),
+            city: Joi.string().allow(""),
+          }),
+        )
+        .optional(),
 
       total: Joi.number().min(0).required(),
     });

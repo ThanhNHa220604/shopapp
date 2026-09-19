@@ -1,0 +1,60 @@
+services:
+  shopapp:
+    build: .
+    ports:
+      - "3000:3000"
+      - "5000:5000"
+    volumes:
+      - ./:/shopapp
+      - /shopapp/node_modules
+      - /shopapp/backend/node_modules
+      - /shopapp/fontend/node_modules
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      HOST: "0.0.0.0" # BẮT BUỘC để React lắng nghe kết nối từ bên ngoài
+      PORT: 3000
+      BACKEND_PORT: 5000
+      NODE_ENV: development
+      DB_DEV_USERNAME: root
+      DB_DEV_PASSWORD: ""
+      DB_DEV_DATABASE: shopapp
+      DB_DEV_PORT: 3306
+      DB_DEV_HOST: mysql
+      DB_DEV_DIALECT: mysql
+      JWT_EXPIRATION: 24h
+      JWT_SECRET: "RITEXaA//qzefvi9Yn0lGtq0p0pnSNjmg6cu5/A0oPSTAOXw2x8soVLuL64jXqGZjGuhKwAreGgHS9h3CFniAA=="
+      BANK_ID: MB
+      BANK_ACCOUNT_NO: "0987654321"
+      BANK_ACCOUNT_NAME: "SHOP TECH"
+      MOMO_PARTNER_CODE: MOMO
+      MOMO_ACCESS_KEY: KLm13A98nd234234
+      MOMO_SECRET_KEY: at67S9m8A9ed234234L1234567890123
+      MOMO_ENDPOINT: https://test-payment.momo.vn/v2/gateway/api/create
+      MOMO_REDIRECT_URL: http://localhost:3000/order-success
+      MOMO_IPN_URL: https://webhook.site/test-momo-ipn
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    volumes:
+      - shopapp-mysql-data:/var/lib/mysql
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: shopapp
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql
+      ALLOW_EMPTY_PASSWORD: "true"
+    depends_on:
+      - mysql
+
+volumes:
+  shopapp-mysql-data:

@@ -5,6 +5,7 @@ class InsertBannerRequest {
     this.name = data.name;
     this.image = data.image;
     this.status = data.status;
+    this.product_ids = data.product_ids;
   }
 
   static validate(data) {
@@ -13,8 +14,10 @@ class InsertBannerRequest {
 
       image: Joi.string().allow("").optional(),
 
-      status: Joi.number().integer().min(1).required(),
-    });
+      product_ids: Joi.array().items(Joi.number()).optional(),
+
+      status: Joi.number().integer().min(0).required(),
+    }).unknown(true);;
 
     return schema.validate(data);
   }

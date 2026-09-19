@@ -9,11 +9,38 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // 👉 ĐÃ SỬA: Gọi đúng models.products (số nhiều viết thường) để ăn khớp với file products.js hiện tại của bạn
+      // 1. Liên kết 1 - Nhiều tới Sản phẩm (Một danh mục có nhiều sản phẩm)
       categories.hasMany(models.products, {
         foreignKey: "category_id",
         as: "products",
       });
+
+      // =================================================================
+      // 🟢 BỔ SUNG LIÊN KẾT VOUCHER TẠI ĐÂY
+      // =================================================================
+      const VoucherCategoryModel =
+        models.vouchercategories ||
+        models.VoucherCategory ||
+        models.VoucherCategories;
+      const VoucherModel = models.vouchers || models.Voucher;
+
+      // 2. Quan hệ 1 - Nhiều tới Bảng Trung Gian (VoucherCategory)
+      if (VoucherCategoryModel) {
+        categories.hasMany(VoucherCategoryModel, {
+          foreignKey: "category_id",
+          as: "voucherCategories",
+        });
+      }
+
+      // 3. Quan hệ Nhiều - Nhiều trực tiếp tới Voucher (Lấy danh sách Vouchers áp dụng cho danh mục)
+      if (VoucherModel && VoucherCategoryModel) {
+        categories.belongsToMany(VoucherModel, {
+          through: VoucherCategoryModel,
+          foreignKey: "category_id",
+          otherKey: "voucher_id",
+          as: "vouchers",
+        });
+      }
     }
   }
 
@@ -24,8 +51,8 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "categories", // 👉 ĐÃ SỬA: Đổi về 'categories' viết thường số nhiều khớp với nhật ký lệnh CLI gốc của bạn (--name categories)
-      tableName: "categories", // Khớp chuẩn xác 100% với cơ sở dữ liệu của bạn
+      modelName: "categories",
+      tableName: "categories",
       timestamps: true,
       underscored: true,
       createdAt: "created_at",

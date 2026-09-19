@@ -1,5 +1,11 @@
+/* emailjs
+ service_esl6hmf: service key
+ * template_z5jqzta: template id
+ * wwEbio0oluHT-tckv: public key
+
 /** npx sequelize-cli init
- mysql -u root -p  chạy sql
+
+docker compose down   chạy sql
 npx sequelize-cli model:generate --name User --attributes email:string,password:string,name:string,role:integer,avatar:string,phone:integer,created_at:date,updated_at:date
 Run migration: npx sequelize-cli db:migrate
   : chạy cái migration apply vào database
@@ -10,6 +16,10 @@ npx sequelize-cli db:migrate:undo : hoàn tác lại migration
 
 npx sequelize-cli model:generate --name categories --attributes name:string,image:string
 npx sequelize-cli model:generate --name brands --attributes name:string,image:string
+npx sequelize-cli model:generate --name messages --attributes conversation_id:integer,sender_id:integer,content:text,status:string
+
+npx sequelize-cli model:generate --name FlashSaleProducts --attributes flash_sale_id:integer,product_id:integer,flash_sale_price:decimal,flash_sale_stock:integer,flash_sale_sold:integer
+npx sequelize-cli model:generate --name FlashSales --attributes name:string,start_time:date,end_time:date,status:integer
 
 npx sequelize-cli model:generate --name banners --attributes name:string,image:string,status:integer,created_at:date,updated_at:date
 npx sequelize-cli model:generate --name orders --attributes user_id:integer,status:integer,note:text,total:integer,created_at:date,updated_at:date
@@ -62,20 +72,92 @@ ALTER TABLE users ADD COLUMN password_changed_at DATETIME; --- thêm cột thờ
 */
 
 const express = require("express");
+const path = require("path");
+const http = require("http"); // 👈 Thêm thư viện http
+const { Server } = require("socket.io"); // 👈 Thêm socket.io
+const { getUserFromSocketToken } = require("./helpers/TokenHelper");
+
+require("dotenv").config({ path: path.join(__dirname, ".env") });
+const db = require("./models"); // 👈 Đưa lên trước để io.use()/io.on() dùng được
+
 const app = express();
+const server = http.createServer(app); // 👈 Bọc app vào HTTP Server
+
+// Khởi tạo Socket.io
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  },
+});
+
+// 📌 Bọc io vào express app để req.app.get("io") trong controller hoạt động
+app.set("io", io);
+
+// 📌 Xác thực JWT ngay khi client kết nối socket (bắt buộc, tránh kết nối vô danh)
+io.use(async (socket, next) => {
+  try {
+    const user = await getUserFromSocketToken(socket);
+    socket.user = user; // gắn user đã xác thực vào socket, dùng lại bên dưới
+    next();
+  } catch (error) {
+    next(new Error(error.message || "Xác thực thất bại"));
+  }
+});
+
+// 📌 Xử lý sự kiện Realtime Socket
+io.on("connection", (socket) => {
+  const user = socket.user;
+
+  // Mỗi user tự join 1 room riêng theo id ngay khi kết nối (không cần đợi
+  // mở đúng hội thoại nào). Nhờ đó server có thể báo tin nhắn mới cho họ dù
+  // họ đang ở trang bất kỳ trong hệ thống (vd. Manager đang xem trang Sản
+  // phẩm vẫn nhận được thông báo có khách nhắn tin) — chứ không chỉ những ai
+  // đang mở sẵn đúng phòng "conversation_x".
+  socket.join(`user_${user.id}`);
+
+  // Chỉ buyer/seller thực sự của hội thoại mới được join phòng đó,
+  // tránh trường hợp người lạ đoán conversationId rồi nghe lén tin nhắn.
+  socket.on("join_conversation", async (conversationId, callback) => {
+    try {
+      const conversation = await db.conversations.findByPk(conversationId);
+      if (!conversation) {
+        return callback?.({ error: "Không tìm thấy hội thoại" });
+      }
+      const isParticipant =
+        conversation.buyer_id === user.id || conversation.seller_id === user.id;
+      if (!isParticipant) {
+        return callback?.({
+          error: "Bạn không có quyền tham gia hội thoại này",
+        });
+      }
+      socket.join(`conversation_${conversationId}`);
+      callback?.({ success: true });
+    } catch (error) {
+      callback?.({ error: "Lỗi server" });
+    }
+  });
+
+  socket.on("leave_conversation", (conversationId) => {
+    socket.leave(`conversation_${conversationId}`);
+  });
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-require("dotenv").config();
-const db = require("./models");
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE,PATCH, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, PUT, POST, DELETE, PATCH, OPTIONS",
+  );
   res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept, Authorization",
   );
-  if (req.method === "OPTIONS") return res.sendStatus(200); // xử lý preflight
+  if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
 
@@ -86,7 +168,9 @@ app.get("/", (req, res) => {
 const Approuter = require("./approuter");
 Approuter.approuter(app);
 
-const port = process?.env?.PORT ?? 5000;
-app.listen(port, () => {
-  console.log(`example app listening on port ${port}`);
+const port = process?.env?.BACKEND_PORT ?? 5000;
+
+// ⚠️ Lưu ý: Đổi app.listen thành server.listen
+server.listen(port, () => {
+  console.log(`Server & Socket.io đang chạy trên port ${port}`);
 });

@@ -20,12 +20,22 @@ module.exports = (sequelize, DataTypes) => {
       status: DataTypes.INTEGER,
       created_at: DataTypes.DATE,
       updated_at: DataTypes.DATE,
+      start_time: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      end_time: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       sequelize,
       modelName: "banners",
       tableName: "banners",
       underscored: true,
+      createdAt: "created_at",
+      updatedAt: "updated_at",
     },
   );
 

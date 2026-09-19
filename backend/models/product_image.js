@@ -32,7 +32,7 @@ module.exports = (sequelize, DataTypes) => {
     {
       sequelize,
       modelName: "product_image",
-      tableName: "product_images", // Thường tên bảng dưới DB sẽ là số nhiều, bạn check lại xem có chữ 's' không nhé
+      tableName: "product_image", // Thường tên bảng dưới DB sẽ là số nhiều, bạn check lại xem có chữ 's' không nhé
       underscored: true, // Tự động map chuẩn gạch dưới cho created_at/updated_at
     },
   );

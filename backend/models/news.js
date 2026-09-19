@@ -16,13 +16,18 @@ module.exports = (sequelize, DataTypes) => {
       });
     }
   }
-  news.init({
-    title: DataTypes.STRING,
-    content: DataTypes.TEXT,
-    image: DataTypes.STRING
-  }, {
-    sequelize,
-    modelName: 'news',
-  });
+  news.init(
+    {
+      title: DataTypes.STRING,
+      content: DataTypes.TEXT,
+      image: DataTypes.STRING,
+    },
+    {
+      sequelize,
+      modelName: "news",
+      tableName: "news",
+      timestamps: false,
+    },
+  );
   return news;
 };

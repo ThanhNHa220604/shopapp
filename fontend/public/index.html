@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-react-app"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>ThanhNha</title>
+
+    <!--
+      Ẩn hoàn toàn giao diện mặc định của Google Translate:
+      - Thanh banner nổi lên đầu trang khi widget dịch
+      - Đường viền/iframe highlight quanh vùng đang được dịch
+      - Tooltip "Powered by Google Translate"
+      Widget vẫn hoạt động bình thường (engine dịch chạy ngầm), chỉ ẩn UI.
+    -->
+    <style>
+      /* Ẩn banner Google Translate nổi lên đầu trang */
+      .goog-te-banner-frame,
+      .skiptranslate > iframe,
+      iframe.goog-te-banner-frame {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+      }
+
+      /* Trình duyệt bị Google Translate đẩy xuống 1 khoảng khi banner hiện
+         ra (thêm top vào <body>) — ép lại về 0 */
+      body {
+        top: 0 !important;
+        position: static !important;
+      }
+
+      /* Ẩn viền highlight + tooltip quanh phần tử đang được dịch */
+      .goog-text-highlight {
+        background: none !important;
+        box-shadow: none !important;
+      }
+
+      /* Ẩn hẳn khối chứa dropdown widget mặc định (chúng ta tự làm nút
+         chuyển ngôn ngữ riêng, không dùng UI xấu mặc định của Google) */
+      #google_translate_element {
+        display: none !important;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+
+    <!-- Div bắt buộc để Google Translate widget khởi tạo vào đây (đã ẩn
+         bằng CSS ở trên, chỉ dùng để engine dịch hoạt động ngầm) -->
+    <div
+      id="google_translate_element"
+      translate="no"
+      class="notranslate"
+    ></div>
+
+    <div id="root"></div>
+
+    <!-- 🌟 THÊM MỚI: nạp engine Google Translate.
+         Trước đây file này chỉ có <div> chứa widget mà THIẾU 2 thẻ <script>
+         bên dưới, nên cookie googtrans có được đặt nhưng không có gì thực
+         hiện việc dịch (kiểm tra thấy: script=false, api=undefined). -->
+    <script>
+      // Google tự gọi hàm này sau khi nạp xong element.js
+      function googleTranslateElementInit() {
+        new window.google.translate.TranslateElement(
+          {
+            pageLanguage: "vi", // ngôn ngữ GỐC của dữ liệu trong DB (khớp <html lang="vi">)
+            includedLanguages: "vi,en", // khớp với ngôn ngữ trong trang Settings
+            autoDisplay: false, // không tự bật thanh chọn ngôn ngữ
+          },
+          "google_translate_element",
+        );
+      }
+    </script>
+    <script
+      async
+      src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
+    ></script>
+  </body>
+</html>

@@ -1,0 +1,157 @@
+{
+  "settings": {
+    "title": "Cài Đặt Hệ Thống",
+    "loading": "Đang tải cấu hình hệ thống...",
+    "website": "Website",
+    "noName": "(chưa đặt tên)",
+    "tryNewOrder": "Thử báo đơn mới",
+    "role": "Quyền",
+    "admin": "Admin",
+
+    "managerModeTitle": "Chế độ xem Quản lý (Manager)",
+    "managerModeText": "Các mục cài đặt quan trọng như \"Bảo trì website\" và \"Phí ship\" đã bị khóa. Bạn chỉ có quyền chỉnh sửa thông tin tài khoản cá nhân.",
+
+    "tabs": {
+      "ui": "1. Giao diện & Trải nghiệm",
+      "store": "2. Thông tin cửa hàng",
+      "sales": "3. Cấu hình bán hàng",
+      "security": "4. Tài khoản & Bảo mật"
+    },
+
+    "themeTitle": "Giao diện Sáng / Tối (Theme Mode)",
+    "light": "Chế độ Sáng (Light)",
+    "dark": "Chế độ Tối (Dark)",
+    "accentTitle": "Màu nhấn (Accent color)",
+    "languageTitle": "Ngôn ngữ hiển thị",
+    "viLabel": "🇻🇳 Tiếng Việt (Mặc định)",
+    "enLabel": "🇺🇸 English",
+
+    "storeTitle": "Thông tin cơ bản cửa hàng & Footer",
+    "storeName": "Tên Website / Thương hiệu",
+    "hotline": "Hotline Liên Hệ (Footer)",
+    "email": "Email hỗ trợ",
+    "address": "Địa chỉ cửa hàng",
+
+    "maintenanceTitle": "Công tắc \"Chế độ Bảo trì Website\"",
+    "maintenanceText": "Khách truy cập sẽ chỉ thấy trang bảo trì khi bật tính năng này.",
+
+    "salesTitle": "Cấu hình Vận chuyển & Thông báo đơn hàng",
+    "shippingFee": "Phí vận chuyển mặc định (VNĐ)",
+    "freeShippingThreshold": "Miễn phí ship cho đơn hàng từ (VNĐ)",
+    "orderSoundTitle": "Phát âm thanh chuông báo khi có đơn mới",
+    "orderSoundText": "Tự động phát chuông đính kèm không cần tải lại trang.",
+    "listenTest": "Nghe thử",
+
+    "securityTitle": "Tài khoản & Đổi mật khẩu cá nhân",
+    "currentPassword": "Mật khẩu hiện tại",
+    "newPassword": "Mật khẩu mới",
+    "confirmPassword": "Xác nhận mật khẩu mới",
+    "passwordStrength": "Độ mạnh mật khẩu:",
+    "passwordEmpty": "Chưa nhập",
+    "passwordWeak": "Yếu",
+    "passwordMedium": "Trung bình",
+    "passwordStrong": "Rất mạnh",
+
+    "save": "Lưu Cấu Hình",
+    "saving": "Đang lưu...",
+    "passwordMismatch": "Mật khẩu mới và Xác nhận mật khẩu không khớp!",
+    "passwordLength": "Mật khẩu phải từ 6 ký tự trở lên!",
+    "passwordDemo": "Đã đổi mật khẩu thành công! (demo, chưa nối API thật)",
+    "saveSuccess": "Đã lưu toàn bộ cấu hình hệ thống thành công!",
+    "saveError": "Lưu cấu hình thất bại, thử lại sau.",
+    "loadError": "Không tải được cấu hình từ server, đang hiển thị giá trị mặc định.",
+    "newOrderMessage": "Đơn hàng mới #ORD-9981 vừa gửi về!"
+  },
+
+  "sidebar": {
+  "adminPanel": "Admin Panel",
+  "overview": "Tổng quan",
+  "products": "Sản phẩm",
+  "myProducts": "Sản phẩm của tôi",
+  "deletedProducts": "Sản phẩm đã xóa",
+  "orders": "Đơn hàng",
+  "vouchers": "Voucher",
+  "viewStore": "Xem cửa hàng",
+  "addProduct": "Thêm sản phẩm",
+  "customerMessages": "Tin nhắn khách hàng",
+  "customers": "Khách hàng",
+  "banners": "Banner động",
+  "news": "Tin tức & Sự kiện",
+  "flashSale": "Flash Sale",
+  "settings": "Cài đặt",
+  "logout": "Đăng xuất"
+},
+
+  "header": {
+    "managerPage": "Trang Quản Lý",
+    "managerPanel": "BẢNG QUẢN LÝ",
+    "email": "EMAIL",
+    "role": "VAI TRÒ",
+    "phone": "SỐ ĐIỆN THOẠI"
+  },
+
+  "roles": {
+    "user": "Người dùng",
+    "manager": "Quản lý",
+    "admin": "Admin"
+  },
+
+  "common": {
+    "customer": "Khách hàng",
+    "avatar": "Ảnh đại diện",
+    "notAvailable": "N/A",
+    "close": "Đóng"
+  },
+  "roles": {
+    "user": "User",
+    "manager": "Manager",
+    "admin": "Admin"
+  },
+  "dashboard": {
+    "productsOnSale": "Sản phẩm đang bán",
+    "productsUnit": "SẢN PHẨM",
+    "totalOrders": "Tổng đơn hàng",
+    "completedUnit": "{{count}} HOÀN THÀNH",
+    "totalRevenue": "Tổng doanh thu",
+    "weeklyOrdersTitle": "Số lượng đơn hàng tuần qua",
+    "weeklyOrdersDesc": "Số lượng đơn hàng tạo ra trong 7 ngày qua",
+    "live": "Trực tiếp",
+    "ordersTooltip": "{{label}} ({{date}}): {{count}} đơn"
+  },
+  "products": {
+    "title": "Quản Lý Sản Phẩm",
+    "subtitle": "Xem danh sách, tra cứu, cập nhật thông tin kho hàng và giá bán.",
+    "chooseExcel": "Chọn file Excel",
+    "excelActiveTitle": "Đang ghi vào: {{name}}. Bấm để đổi file khác.",
+    "excelChooseTitle": "Chọn 1 file Excel để luôn ghi đè vào đúng file đó mỗi lần lưu sản phẩm",
+    "searchPlaceholder": "Tìm kiếm mã hoặc tên sản phẩm...",
+    "excelPickError": "Không thể chọn file Excel.",
+    "loadDetailError": "Không thể tải toàn bộ dữ liệu từ Database.",
+    "saveSuccess": "Cập nhật thay đổi sản phẩm thành công!",
+    "saveError": "Lưu dữ liệu thất bại.",
+    "deleteError": "Xóa thất bại"
+  },
+  "productDetail": {
+      "breadcrumb": "Quản lý sản phẩm",
+      "titleView": "Chi tiết sản phẩm (Xem)",
+      "titleEdit": "Chỉnh sửa sản phẩm",
+      "back": "Quay lại",
+      "saving": "Đang lưu...",
+      "saveChanges": "Cập nhật thay đổi",
+      "basicInfo": "Thông tin cơ bản",
+      "name": "Tên sản phẩm *",
+      "imageUrl": "Đường dẫn hình ảnh chính",
+      "specification": "Đặc điểm nổi bật",
+      "description": "Mô tả sản phẩm",
+      "techSpecs": "Thông số kỹ thuật",
+      "addSpec": "Thêm thông số",
+      "specNamePlaceholder": "Tên thông số (VD: Hệ điều hành)",
+      "specValuePlaceholder": "Giá trị (VD: iOS 17)",
+      "classifyAndPrice": "Phân loại & Giá",
+      "category": "Danh mục ngành hàng *",
+      "brand": "Thương hiệu *",
+      "price": "Giá bán ($) *",
+      "oldPrice": "Giá gốc ($)",
+      "totalStock": "Tổng kho gốc (Tự động tính)"
+    }
+}

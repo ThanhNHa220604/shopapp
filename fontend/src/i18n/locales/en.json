@@ -1,0 +1,146 @@
+{
+  "settings": {
+    "title": "System Settings",
+    "loading": "Loading system settings...",
+    "website": "Website",
+    "noName": "(not set yet)",
+    "tryNewOrder": "Test new order alert",
+    "role": "Role",
+    "admin": "Admin",
+
+    "managerModeTitle": "Manager view mode",
+    "managerModeText": "Important settings such as \"Website maintenance\" and \"Shipping fee\" are locked. You can only edit personal account information.",
+
+    "tabs": {
+      "ui": "1. Interface & Experience",
+      "store": "2. Store information",
+      "sales": "3. Sales settings",
+      "security": "4. Account & Security"
+    },
+
+    "themeTitle": "Light / Dark Mode",
+    "light": "Light Mode",
+    "dark": "Dark Mode",
+    "accentTitle": "Accent color",
+    "languageTitle": "Display language",
+    "viLabel": "🇻🇳 Vietnamese (Default)",
+    "enLabel": "🇺🇸 English",
+
+    "storeTitle": "Basic store information & Footer",
+    "storeName": "Store / Brand name",
+    "hotline": "Contact Hotline (Footer)",
+    "email": "Support email",
+    "address": "Store address",
+
+    "maintenanceTitle": "Toggle \"Website Maintenance Mode\"",
+    "maintenanceText": "Visitors will only see the maintenance page when this is enabled.",
+
+    "salesTitle": "Shipping & Order Notification Settings",
+    "shippingFee": "Default shipping fee (VND)",
+    "freeShippingThreshold": "Free shipping for orders from (VND)",
+    "orderSoundTitle": "Play order notification sound",
+    "orderSoundText": "Automatically plays a sound when a new order arrives.",
+    "listenTest": "Preview",
+
+    "securityTitle": "Account & Change Password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordStrength": "Password strength:",
+    "passwordEmpty": "Not entered",
+    "passwordWeak": "Weak",
+    "passwordMedium": "Medium",
+    "passwordStrong": "Strong",
+
+    "save": "Save Settings",
+    "saving": "Saving...",
+    "passwordMismatch": "New password and confirmation do not match!",
+    "passwordLength": "Password must be at least 6 characters!",
+    "passwordDemo": "Password changed successfully! (demo, API not connected yet)",
+    "saveSuccess": "System settings saved successfully!",
+    "saveError": "Failed to save settings, please try again later.",
+    "loadError": "Could not load settings from server. Showing default values instead.",
+    "newOrderMessage": "New order #ORD-9981 has just arrived!"
+  },
+
+  "sidebar": {
+  "adminPanel": "Admin Panel",
+  "overview": "Overview",
+  "products": "Products",
+  "myProducts": "My products",
+  "deletedProducts": "Deleted products",
+  "orders": "Orders",
+  "vouchers": "Vouchers",
+  "viewStore": "View store",
+  "addProduct": "Add product",
+  "customerMessages": "Customer messages",
+  "customers": "Customers",
+  "banners": "Dynamic banners",
+  "news": "News & events",
+  "flashSale": "Flash Sale",
+  "settings": "Settings",
+  "logout": "Log out"
+},
+
+  "header": {
+    "managerPage": "Manager Page",
+    "managerPanel": "MANAGER PANEL",
+    "email": "EMAIL",
+    "role": "ROLE",
+    "phone": "PHONE"
+  },
+
+  "common": {
+    "customer": "Customer",
+    "avatar": "Avatar",
+    "notAvailable": "N/A",
+    "close": "Close"
+  },
+  "dashboard": {
+    "productsOnSale": "Products on sale",
+    "productsUnit": "PRODUCTS",
+    "totalOrders": "Total orders",
+    "completedUnit": "{{count}} COMPLETED",
+    "totalRevenue": "Total revenue",
+    "weeklyOrdersTitle": "Orders this week",
+    "weeklyOrdersDesc": "Orders created in the last 7 days",
+    "live": "Live",
+    "ordersTooltip": "{{label}} ({{date}}): {{count}} orders"
+  },
+  "products": {
+    "title": "Product Management",
+    "subtitle": "View the list, search, and update inventory and pricing information.",
+    "chooseExcel": "Choose Excel file",
+    "excelActiveTitle": "Currently writing to: {{name}}. Click to switch to another file.",
+    "excelChooseTitle": "Choose one Excel file that will always be updated each time a product is saved",
+    "searchPlaceholder": "Search by product code or name...",
+    "excelPickError": "Unable to choose the Excel file.",
+    "loadDetailError": "Unable to load the full product data from the database.",
+    "saveSuccess": "Product updated successfully!",
+    "saveError": "Failed to save data.",
+    "deleteError": "Failed to delete the product."
+  },
+  "productDetail": {
+    "breadcrumb": "Product management",
+    "titleView": "Product details (View)",
+    "titleEdit": "Edit product",
+    "back": "Back",
+    "saving": "Saving...",
+    "saveChanges": "Save changes",
+    "basicInfo": "Basic information",
+    "name": "Product name *",
+    "imageUrl": "Main image URL",
+    "specification": "Key features",
+    "description": "Product description",
+    "techSpecs": "Technical specifications",
+    "addSpec": "Add specification",
+    "specNamePlaceholder": "Specification name (e.g. Operating system)",
+    "specValuePlaceholder": "Value (e.g. iOS 17)",
+    "classifyAndPrice": "Classification & Pricing",
+    "category": "Category *",
+    "brand": "Brand *",
+    "price": "Selling price ($) *",
+    "oldPrice": "Original price ($)",
+    "totalStock": "Total stock (auto-calculated)"
+  }
+}

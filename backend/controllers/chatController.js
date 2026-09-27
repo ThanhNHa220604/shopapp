@@ -80,11 +80,7 @@ async function startConversation(req, res) {
         .json({ message: "Đơn hàng này không thuộc về bạn" });
     }
 
-    // 2. Đơn hàng đã đặt thành công (tồn tại + thuộc về buyer) là được hỏi
-    //    shop, không giới hạn theo trạng thái (Pending/Processing/Shipped/
-    //    Delivered...) — chỉ cần đơn có thật.
-
-    // 3. Sản phẩm phải thực sự nằm trong đơn hàng đó
+    // 2. Sản phẩm phải thực sự nằm trong đơn hàng đó
     const OrderDetailModel = db["order-detail"] || db.order_detail;
     const detail = await OrderDetailModel.findOne({
       where: { order_id, product_id },
@@ -113,8 +109,9 @@ async function startConversation(req, res) {
         .json({ message: "Bạn không thể tự nhắn tin với chính mình" });
     }
 
-    const [conversation] = await db.conversations.findOrCreate({
-      where: { buyer_id: buyer.id, seller_id: sellerId, product_id },
+    // 3. TÌM HOẶC TẠO DUY NHẤT 1 HOẠI THOẠI GIỮA BUYER VÀ SELLER
+    const [conversation, created] = await db.conversations.findOrCreate({
+      where: { buyer_id: buyer.id, seller_id: sellerId }, // Chỉ lọc theo Buyer và Seller
       defaults: {
         buyer_id: buyer.id,
         seller_id: sellerId,
@@ -123,6 +120,7 @@ async function startConversation(req, res) {
       },
     });
 
+    // 4. Tạo tin nhắn mới
     const message = await db.messages.create({
       conversation_id: conversation.id,
       sender_id: buyer.id,
@@ -130,17 +128,15 @@ async function startConversation(req, res) {
       status: "sent",
     });
 
+    // 5. Cập nhật tin nhắn cuối và liên kết đơn hàng/sản phẩm mới nhất
     await conversation.update({
       last_message: content,
       last_message_at: new Date(),
+      product_id, // Cập nhật vết sản phẩm hỏi gần nhất
+      order_id, // Cập nhật vết đơn hàng hỏi gần nhất
     });
 
-    // Phát realtime: gửi vào room cá nhân của CẢ buyer lẫn seller (chứ
-    // không chỉ room "conversation_x") — để dù người bán đang ở trang nào
-    // trong hệ thống (Sản phẩm, Đơn hàng...) cũng nhận được thông báo có
-    // khách nhắn tin, không cần đợi họ mở đúng hội thoại này trước.
-    // io.to(A).to(B).emit() của socket.io tự dedup, không lo bắn trùng 2
-    // lần cho người đang vừa ở trong room hội thoại vừa ở room cá nhân.
+    // 6. Phát Realtime qua Socket.io
     const io = req.app.get("io");
     if (io) {
       io.to(`conversation_${conversation.id}`)

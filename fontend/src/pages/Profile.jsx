@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom"; // 🟢 Import useParams và useNavigate
 import authService from "../services/auth";
 import api from "../services/api";
+import { getAvatarUrl } from "../utils/imageUrl";
 
 // Import các component con
 import Sidebar from "../components/Profile/Sidebar";
@@ -36,13 +37,7 @@ const Profile = () => {
     avatar: "",
   });
 
-  const formatAvatarUrl = (avatarPath) => {
-    if (!avatarPath) return "";
-    if (avatarPath.startsWith("http://") || avatarPath.startsWith("https://")) {
-      return avatarPath;
-    }
-    return `http://localhost:3000/api/images/${avatarPath}`;
-  };
+  const formatAvatarUrl = (avatarPath) => getAvatarUrl(avatarPath, "");
 
   useEffect(() => {
     api

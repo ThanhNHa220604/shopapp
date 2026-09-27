@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Heart, ShoppingBag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { getImageUrl } from "../../utils/imageUrl";
 
-const IMAGE_BASE_URL = "http://localhost:5000/uploads/";
+const NO_IMAGE_FALLBACK = "https://placehold.co/300x300?text=No+Image";
 
 const ProductCard = ({
   product,
@@ -38,13 +39,8 @@ const ProductCard = ({
     window.dispatchEvent(new Event("wishlistUpdated"));
   };
 
-  const getProductImage = (imageName) => {
-    if (!imageName) return "https://placehold.co/300x300?text=No+Image";
-    if (imageName.startsWith("http://") || imageName.startsWith("https://")) {
-      return imageName;
-    }
-    return `${IMAGE_BASE_URL}${imageName}`;
-  };
+  const getProductImage = (imageName) =>
+    getImageUrl(imageName, NO_IMAGE_FALLBACK);
 
   // Định dạng hiển thị số lượng bán (VD: 1200 -> 1.2k)
   const formatSold = (num) => {
@@ -119,7 +115,7 @@ const ProductCard = ({
           className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500 ease-out"
           onError={(e) => {
             e.target.onerror = null;
-            e.target.src = "https://placehold.co/300x300?text=No+Image";
+            e.target.src = NO_IMAGE_FALLBACK;
           }}
         />
       </div>

@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   shopapp:
     build: .
@@ -10,31 +12,47 @@ services:
       - /shopapp/backend/node_modules
       - /shopapp/fontend/node_modules
     environment:
-      CHOKIDAR_USEPOLLING: "true"
-      WATCHPACK_POLLING: "true"
-      HOST: "0.0.0.0" # BẮT BUỘC để React lắng nghe kết nối từ bên ngoài
-      PORT: 3000
-      BACKEND_PORT: 5000
-      NODE_ENV: development
-      DB_DEV_USERNAME: root
-      DB_DEV_PASSWORD: ""
-      DB_DEV_DATABASE: shopapp
-      DB_DEV_PORT: 3306
-      DB_DEV_HOST: mysql
-      DB_DEV_DIALECT: mysql
-      JWT_EXPIRATION: 24h
-      JWT_SECRET: "RITEXaA//qzefvi9Yn0lGtq0p0pnSNjmg6cu5/A0oPSTAOXw2x8soVLuL64jXqGZjGuhKwAreGgHS9h3CFniAA=="
-      BANK_ID: MB
-      BANK_ACCOUNT_NO: "0987654321"
-      BANK_ACCOUNT_NAME: "SHOP TECH"
-      MOMO_PARTNER_CODE: MOMO
-      MOMO_ACCESS_KEY: KLm13A98nd234234
-      MOMO_SECRET_KEY: at67S9m8A9ed234234L1234567890123
-      MOMO_ENDPOINT: https://test-payment.momo.vn/v2/gateway/api/create
-      MOMO_REDIRECT_URL: http://localhost:3000/order-success
-      MOMO_IPN_URL: https://webhook.site/test-momo-ipn
+      - DANGEROUSLY_DISABLE_HOST_CHECK=true
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - HOST=0.0.0.0
+      - PORT=3000
+      - BACKEND_PORT=5000
+      - NODE_ENV=development
+      # 🟢 THÊM MỚI: để axios (api.js) và ảnh (utils/imageUrl.js) dùng đường
+      # dẫn tương đối "/api" và "/uploads" thay vì hardcode "http://localhost:5000".
+      # Nhờ đó dù truy cập qua localhost:8000, ngrok, hay domain thật sau này,
+      # request luôn tự trỏ đúng về domain hiện tại -> Nginx (service "proxy")
+      # sẽ tự route /api/ và /uploads/ sang đúng shopapp:5000.
+      - REACT_APP_API_URL=/api
+      - DB_DEV_USERNAME=root
+      - DB_DEV_PASSWORD=
+      - DB_DEV_DATABASE=shopapp
+      - DB_DEV_PORT=3306
+      - DB_DEV_HOST=mysql
+      - DB_DEV_DIALECT=mysql
+      - JWT_EXPIRATION=24h
+      - JWT_SECRET=RITEXaA//qzefvi9Yn0lGtq0p0pnSNjmg6cu5/A0oPSTAOXw2x8soVLuL64jXqGZjGuhKwAreGgHS9h3CFniAA==
+      - BANK_ID=MB
+      - BANK_ACCOUNT_NO=0987654321
+      - BANK_ACCOUNT_NAME=SHOP TECH
+      - MOMO_PARTNER_CODE=MOMO
+      - MOMO_ACCESS_KEY=KLm13A98nd234234
+      - MOMO_SECRET_KEY=at67S9m8A9ed234234L1234567890123
+      - MOMO_ENDPOINT=https://test-payment.momo.vn/v2/gateway/api/create
+      - MOMO_REDIRECT_URL=http://localhost:3000/order-success
+      - MOMO_IPN_URL=https://webhook.site/test-momo-ipn
     depends_on:
       - mysql
+
+  proxy:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - shopapp
 
   mysql:
     image: mysql:8.0

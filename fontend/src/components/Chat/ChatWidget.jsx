@@ -104,6 +104,7 @@ const ChatWidget = () => {
     }
   }, []);
 
+  // Lắng nghe Socket khi có tin nhắn mới
   useEffect(() => {
     if (!isLoggedIn) return;
     const socket = getChatSocket();
@@ -114,12 +115,12 @@ const ChatWidget = () => {
       setActiveConversation((current) => {
         if (current && message.conversation_id === current.id) {
           setMessages((prev) =>
-            prev.some((m) => m.id === message.id) ? prev : [...prev, message]
+            prev.some((m) => m.id === message.id) ? prev : [...prev, message],
           );
           setTimeout(scrollToBottom, 50);
         } else {
           setUnreadConvIds((prev) =>
-            new Set(prev).add(message.conversation_id)
+            new Set(prev).add(message.conversation_id),
           );
         }
         return current;
@@ -130,16 +131,61 @@ const ChatWidget = () => {
           c.id === message.conversation_id
             ? {
                 ...c,
-                last_message: message.type === "image" ? "[Hình ảnh]" : message.content,
+                last_message:
+                  message.type === "image" ? "[Hình ảnh]" : message.content,
                 last_message_at: message.created_at,
               }
-            : c
-        )
+            : c,
+        ),
       );
     };
 
     socket.on("new_message", handleNewMessage);
     return () => socket.off("new_message", handleNewMessage);
+  }, [isLoggedIn]);
+
+  // Lắng nghe sự kiện 'open-chat' từ nút "Nhắn tin hỏi shop" ở OrderHistory
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const handleOpenChat = async (e) => {
+      const { order_id, product_id, productName } = e.detail || {};
+      if (!order_id || !product_id) return;
+
+      setOpen(true);
+      setLoading(true);
+
+      try {
+        const defaultContent = productName
+          ? `Chào shop, tôi muốn hỏi về sản phẩm: ${productName}`
+          : "Chào shop, tôi muốn hỏi về đơn hàng này.";
+
+        const data = await chatService.startConversation({
+          order_id,
+          product_id,
+          content: defaultContent,
+        });
+
+        const conversation = data.conversation || data;
+
+        setActiveConversation(conversation);
+        setView("thread");
+
+        const history = await chatService.getMessages(conversation.id);
+        setMessages(history);
+
+        socketRef.current?.emit("join_conversation", conversation.id);
+      } catch (err) {
+        console.error("Lỗi khi mở cuộc trò chuyện với shop:", err);
+        alert("Không thể kết nối cuộc trò chuyện với shop!");
+      } finally {
+        setLoading(false);
+        setTimeout(scrollToBottom, 100);
+      }
+    };
+
+    window.addEventListener("open-chat", handleOpenChat);
+    return () => window.removeEventListener("open-chat", handleOpenChat);
   }, [isLoggedIn]);
 
   useEffect(() => {
@@ -188,7 +234,7 @@ const ChatWidget = () => {
       let payload;
       if (currentImg) {
         payload = new FormData();
-        payload.append("image", currentImg); // Tên field khớp với upload.single("image")
+        payload.append("image", currentImg);
         if (currentContent) payload.append("content", currentContent);
       } else {
         payload = currentContent;
@@ -196,22 +242,25 @@ const ChatWidget = () => {
 
       const realMessage = await chatService.sendMessageRest(
         activeConversation.id,
-        payload
+        payload,
       );
 
       setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? realMessage : m))
+        prev.map((m) => (m.id === tempId ? realMessage : m)),
       );
       setConversations((prev) =>
         prev.map((c) =>
           c.id === activeConversation.id
             ? {
                 ...c,
-                last_message: realMessage.type === "image" ? "[Hình ảnh]" : realMessage.content,
+                last_message:
+                  realMessage.type === "image"
+                    ? "[Hình ảnh]"
+                    : realMessage.content,
                 last_message_at: realMessage.created_at,
               }
-            : c
-        )
+            : c,
+        ),
       );
     } catch (err) {
       console.error("[Chat] Gửi tin thất bại:", err);
@@ -269,7 +318,7 @@ const ChatWidget = () => {
                   src={resolveAvatarUrl(
                     isSeller
                       ? activeConversation?.buyer?.avatar
-                      : activeConversation?.seller?.avatar
+                      : activeConversation?.seller?.avatar,
                   )}
                   alt={
                     isSeller
@@ -277,15 +326,17 @@ const ChatWidget = () => {
                       : activeConversation?.seller?.name
                   }
                   className="w-8 h-8"
-                  fallbackIcon={isSeller ? <UserIcon size={14} /> : <Store size={14} />}
+                  fallbackIcon={
+                    isSeller ? <UserIcon size={14} /> : <Store size={14} />
+                  }
                 />
               )}
               <h3 className="font-black text-sm text-slate-800 flex-1 truncate">
                 {view === "list"
                   ? "Tin nhắn"
                   : isSeller
-                  ? activeConversation?.buyer?.name || "Khách hàng"
-                  : activeConversation?.seller?.name || "Shop"}
+                    ? activeConversation?.buyer?.name || "Khách hàng"
+                    : activeConversation?.seller?.name || "Shop"}
               </h3>
               <button
                 onClick={() => setOpen(false)}
@@ -316,7 +367,13 @@ const ChatWidget = () => {
                           src={resolveAvatarUrl(other?.avatar)}
                           alt={other?.name || "Người dùng"}
                           className="w-10 h-10"
-                          fallbackIcon={isSeller ? <UserIcon size={16} /> : <Store size={16} />}
+                          fallbackIcon={
+                            isSeller ? (
+                              <UserIcon size={16} />
+                            ) : (
+                              <Store size={16} />
+                            )
+                          }
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-bold text-slate-800 truncate">
@@ -361,7 +418,7 @@ const ChatWidget = () => {
                         >
                           <Avatar
                             src={resolveAvatarUrl(
-                              isMine ? currentUser?.avatar : partner?.avatar
+                              isMine ? currentUser?.avatar : partner?.avatar,
                             )}
                             alt={isMine ? "Tôi" : partner?.name || "User"}
                             className="w-6 h-6 text-[10px]"
@@ -453,7 +510,7 @@ const ChatWidget = () => {
             )}
           </div>
         </>,
-        document.body
+        document.body,
       )}
     </>
   );

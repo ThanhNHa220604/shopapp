@@ -37,7 +37,7 @@ import TermsPage from "./pages/TermsPage";
 import WarrantyPage from "./pages/WarrantyPage";
 
 
-
+import ImageSearchPage from "./components/search/ImageSearchPage";
 import ManagerChat from "./components/ManagerChat/ManagerChat"
 
 // Layout Manager
@@ -126,12 +126,12 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
-
           <Route path="/guide" element={<GuidePage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/returns" element={<ReturnsPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/warranty" element={<WarrantyPage />} />
+          <Route path="/search-image" element={<ImageSearchPage />} />
 
           {/* User Authenticated Routes */}
           <Route

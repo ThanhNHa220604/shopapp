@@ -39,6 +39,7 @@ const InsertBannerDetailRequest = require("./dtos/requests/bannerdetail/insertBa
 const InsertProductImageRequest = require("./dtos/requests/product_image/insertProductImage");
 const InsertCartRequest = require("./dtos/requests/carts/insertCart");
 const InsertCartItemRequest = require("./dtos/requests/cart_items/insertCartItem");
+import { searchByImage } from './controllers/productSearchController.js';
 
 const asyncHandler = require("./middlewares/aysncHandler");
 const Upload = require("./middlewares/ImageUpload");
@@ -46,6 +47,7 @@ const validateImage = require("./middlewares/validateImage");
 const validate = require("./middlewares/validate");
 const uploadGoogeImage = require("./middlewares/imageGoogleUpload");
 const Maintaince = require("./middlewares/Maintenance");
+const upload = multer({ storage: multer.memoryStorage() });
 
 
 
@@ -565,6 +567,11 @@ router.put(
   requireRoles([UserRole.ADMIN, UserRole.MANAGER]),
   asyncHandler(SettingController.updateSettings),
 );
+
+
+router.post('/products/search-by-image', upload.single('image'), searchByImage);
+
+
 
   app.use("/api", router);
 }

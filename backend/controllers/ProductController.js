@@ -1,6 +1,33 @@
 const Sequelize = require("sequelize");
+const path = require("path");
 const db = require("../models");
+const { getImageVector } = require("../helpers/vectorHelper.js");
 const Op = Sequelize.Op;
+
+// Chuyển web path kiểu "/uploads/xxx.jfif" (client dùng để hiển thị ảnh)
+// thành đường dẫn thật trên ổ đĩa (khớp với chỗ express.static mount
+// "/uploads" -> thư mục "uploads" ở root backend, xem server.js).
+function resolveUploadPath(webPath) {
+  if (!webPath || typeof webPath !== "string") return null;
+  const relative = webPath.replace(/^\/?uploads\//, "");
+  return path.join(__dirname, "..", "uploads", relative);
+}
+
+// Sinh image_vector từ 1 đường dẫn ảnh, KHÔNG throw ra ngoài — nếu model AI
+// lỗi (timeout, ảnh hỏng...) thì trả về null, để không chặn việc tạo/sửa
+// sản phẩm chỉ vì bước AI phụ trợ này gặp sự cố.
+async function safeGenerateImageVector(webPath) {
+  const absolutePath = resolveUploadPath(webPath);
+  if (!absolutePath) return null;
+
+  try {
+    const vector = await getImageVector(absolutePath);
+    return JSON.stringify(vector);
+  } catch (err) {
+    console.error(`Lỗi sinh image_vector cho ảnh "${webPath}":`, err.message);
+    return null;
+  }
+}
 
 // =========================================================================
 // 1. LẤY DANH SÁCH SẢN PHẨM (Tích hợp kiểm tra Flash Sale)
@@ -396,8 +423,6 @@ async function restoreProduct(req, res) {
   }
 }
 
-
-
 // =========================================================================
 // 4. CẬP NHẬT SẢN PHẨM
 // =========================================================================
@@ -453,6 +478,16 @@ async function updateProduct(req, res) {
       }
 
       // 3. TIẾN HÀNH CẬP NHẬT SẢN PHẨM (Lúc này brand_id chắc chắn đã là một con số, không lo bị null)
+
+      // 3b. Nếu ảnh đại diện sản phẩm bị đổi (khác ảnh cũ trong DB), sinh
+      // lại image_vector cho ảnh mới — nếu ảnh không đổi thì bỏ qua, tránh
+      // tốn thời gian chạy lại model AI không cần thiết.
+      if (productData.image && productData.image !== product.image) {
+        productData.image_vector = await safeGenerateImageVector(
+          productData.image,
+        );
+      }
+
       await product.update({ name, ...productData }, { transaction });
 
       // --- Giữ nguyên logic xử lý attributes cũ của bạn ---
@@ -607,7 +642,10 @@ async function insertProduct(req, res) {
     if (productExists)
       return res.status(400).json({ message: "Tên sản phẩm đã tồn tại" });
 
-    // 4. KHỞI TẠO TRANSACTION
+    // 4. SINH VECTOR AI TỪ ẢNH SẢN PHẨM (dùng cho tính năng tìm kiếm bằng hình ảnh)
+    const imageVector = await safeGenerateImageVector(image);
+
+    // 5. KHỞI TẠO TRANSACTION
     const transaction = await db.sequelize.transaction();
     try {
       const product = await db.products.create(
@@ -616,6 +654,7 @@ async function insertProduct(req, res) {
           price,
           oldprice,
           image,
+          image_vector: imageVector,
           description,
           specification,
           buyturn,
@@ -783,7 +822,6 @@ async function insertProduct(req, res) {
       .json({ message: "Lỗi hệ thống khi thêm hàng", error: error.message });
   }
 }
-
 
 async function getDeletedProducts(req, res) {
   try {

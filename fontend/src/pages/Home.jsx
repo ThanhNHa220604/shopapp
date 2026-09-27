@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import api from "../services/api";
 import contentService from "../services/content";
+import { getImageUrl } from "../utils/imageUrl";
 
 // Import Components con
 import ProductCard from "../components/Atomic/ProductCard";
@@ -37,6 +38,11 @@ const SECTION_TITLE =
   "font-black text-[#6338f6] text-sm sm:text-base md:text-lg tracking-wide uppercase border-l-4 border-[#6338f6] pl-3";
 const VIEW_ALL_BTN =
   "text-[#6338f6] hover:text-indigo-800 font-extrabold text-xs sm:text-sm flex items-center gap-1 transition-colors group";
+
+const NEWS_FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?q=80&w=1500";
+
+const getNewsImage = (imageName) => getImageUrl(imageName, NEWS_FALLBACK_IMAGE);
 
 // 🌟 DANH MỤC SIDEBAR
 const sidebarCategories = [
@@ -294,15 +300,13 @@ const Home = () => {
                 >
                   <div className="w-full sm:w-1/4 h-36 sm:h-32 rounded-xl overflow-hidden bg-slate-100 relative flex-shrink-0">
                     <img
-                      src={
-                        post.image
-                          ? post.image.startsWith("http")
-                            ? post.image
-                            : `http://localhost:5000/uploads/${post.image}`
-                          : "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?q=80&w=1500"
-                      }
+                      src={getNewsImage(post.image)}
                       alt={post.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = NEWS_FALLBACK_IMAGE;
+                      }}
                     />
                     <span className="absolute top-2.5 left-2.5 bg-[#6338f6] text-white font-black text-[9px] px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-sm">
                       {post.category || "Tin tức"}

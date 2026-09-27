@@ -69,68 +69,67 @@ yarn add jsonwebtoken
 ALTER TABLE users ADD COLUMN is_locked TINYINT(1) DEFAULT 0;
 UPDATE users SET role =2 WHERE id= ... --update role của user thành admin/user
 ALTER TABLE users ADD COLUMN password_changed_at DATETIME; --- thêm cột thời gian thay đổi password
+
+
+
+XÂY DỰNG TÌM KIẾM BẰNG HÌNH ẢNH 
+- Tính toán khoảng cách vector trực tiếp bằng Node.js
++ Sql lữu trữ chuỗi vecto .Khi User upload ảnh , Node.js sẽ lấy danh sách tất cả các Vector sản phẩm về Memory và dùng thuật toán Cosine Similarity để tìm ra sản phẩm giống nhât
++ dùng cho demo khi chạy ở Local và dưới 10k ảnh(dùng thư viện @xenova/transformers)
 */
 
 const express = require("express");
 const path = require("path");
-const http = require("http"); // 👈 Thêm thư viện http
-const { Server } = require("socket.io"); // 👈 Thêm socket.io
+const http = require("http");
+const { Server } = require("socket.io");
 const { getUserFromSocketToken } = require("./helpers/TokenHelper");
-
 require("dotenv").config({ path: path.join(__dirname, ".env") });
-const db = require("./models"); // 👈 Đưa lên trước để io.use()/io.on() dùng được
+
+const db = require("./models");
 
 const app = express();
-const server = http.createServer(app); // 👈 Bọc app vào HTTP Server
+const server = http.createServer(app);
 
-// Khởi tạo Socket.io
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   },
 });
 
-// 📌 Bọc io vào express app để req.app.get("io") trong controller hoạt động
 app.set("io", io);
 
-// 📌 Xác thực JWT ngay khi client kết nối socket (bắt buộc, tránh kết nối vô danh)
 io.use(async (socket, next) => {
   try {
     const user = await getUserFromSocketToken(socket);
-    socket.user = user; // gắn user đã xác thực vào socket, dùng lại bên dưới
+    socket.user = user;
     next();
   } catch (error) {
     next(new Error(error.message || "Xác thực thất bại"));
   }
 });
 
-// 📌 Xử lý sự kiện Realtime Socket
 io.on("connection", (socket) => {
   const user = socket.user;
 
-  // Mỗi user tự join 1 room riêng theo id ngay khi kết nối (không cần đợi
-  // mở đúng hội thoại nào). Nhờ đó server có thể báo tin nhắn mới cho họ dù
-  // họ đang ở trang bất kỳ trong hệ thống (vd. Manager đang xem trang Sản
-  // phẩm vẫn nhận được thông báo có khách nhắn tin) — chứ không chỉ những ai
-  // đang mở sẵn đúng phòng "conversation_x".
   socket.join(`user_${user.id}`);
 
-  // Chỉ buyer/seller thực sự của hội thoại mới được join phòng đó,
-  // tránh trường hợp người lạ đoán conversationId rồi nghe lén tin nhắn.
   socket.on("join_conversation", async (conversationId, callback) => {
     try {
       const conversation = await db.conversations.findByPk(conversationId);
       if (!conversation) {
         return callback?.({ error: "Không tìm thấy hội thoại" });
       }
+
       const isParticipant =
         conversation.buyer_id === user.id || conversation.seller_id === user.id;
+
       if (!isParticipant) {
         return callback?.({
           error: "Bạn không có quyền tham gia hội thoại này",
         });
       }
+
       socket.join(`conversation_${conversationId}`);
       callback?.({ success: true });
     } catch (error) {
@@ -157,6 +156,7 @@ app.use((req, res, next) => {
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept, Authorization",
   );
+
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
@@ -168,9 +168,8 @@ app.get("/", (req, res) => {
 const Approuter = require("./approuter");
 Approuter.approuter(app);
 
-const port = process?.env?.BACKEND_PORT ?? 5000;
+const port = process.env.BACKEND_PORT || 5000;
 
-// ⚠️ Lưu ý: Đổi app.listen thành server.listen
-server.listen(port, () => {
+server.listen(port, "0.0.0.0", () => {
   console.log(`Server & Socket.io đang chạy trên port ${port}`);
 });

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Clock, ArrowRight, ChevronLeft, AlertCircle } from "lucide-react";
 import contentService from "../services/content"; // Gọi dịch vụ lấy dữ liệu từ Backend
+import { getImageUrl as buildImageUrl } from "../utils/imageUrl";
 
-const IMAGE_BASE_URL = "http://localhost:5000/uploads/";
+const NEWS_FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?q=80&w=1500";
 
 const News = () => {
   const [posts, setPosts] = useState([]);
@@ -11,15 +13,8 @@ const News = () => {
   // 🔥 State quản lý bài viết đang mở để xem chi tiết nội dung đầy đủ
   const [selectedPost, setSelectedPost] = useState(null);
 
-  // Hàm bổ trợ xử lý hiển thị đúng đường dẫn ảnh từ Backend
-  const getImageUrl = (imgName) => {
-    if (!imgName)
-      return "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?q=80&w=1500";
-    if (imgName.startsWith("http://") || imgName.startsWith("https://")) {
-      return imgName;
-    }
-    return `${IMAGE_BASE_URL}${imgName}`;
-  };
+  // Hàm bổ trợ xử lý hiển thị đúng đường dẫn ảnh từ Backend (dùng chung utils/imageUrl.js)
+  const getImageUrl = (imgName) => buildImageUrl(imgName, NEWS_FALLBACK_IMAGE);
 
   useEffect(() => {
     let ignore = false;
@@ -108,6 +103,10 @@ const News = () => {
                   src={getImageUrl(selectedPost.image)}
                   className="w-full h-full object-cover"
                   alt="news-detail-cover"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = NEWS_FALLBACK_IMAGE;
+                  }}
                 />
               </div>
 
@@ -151,6 +150,10 @@ const News = () => {
                   src={getImageUrl(post.image)}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out"
                   alt="news-thumbnail"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = NEWS_FALLBACK_IMAGE;
+                  }}
                 />
                 <span className="absolute top-2.5 left-2.5 bg-[#6338f6] text-white font-black text-[8px] sm:text-[9px] px-2.5 py-1 rounded-md uppercase tracking-wider shadow-sm">
                   {post.category || "Tin tức"}

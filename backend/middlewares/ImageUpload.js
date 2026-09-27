@@ -20,6 +20,7 @@ const fileFilter = function (req, file, cb) {
     "image/webp",
     "image/gif",
     "image/jfif",
+    
     "application/octet-stream",
   ];
 

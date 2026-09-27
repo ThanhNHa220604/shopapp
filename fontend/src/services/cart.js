@@ -1,7 +1,10 @@
 // File: src/services/cart.js
 import axios from "axios";
 
-const API_URL = "http://localhost:5000/api/cart-items";
+// Dùng chung 1 nguồn cấu hình với services/api.js (biến REACT_APP_API_URL),
+// tránh hardcode "localhost:5000" chỉ chạy đúng trên máy chủ Docker.
+const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
+const API_URL = `${API_BASE_URL}/cart-items`;
 
 // Hàm lấy config đã được tối ưu bảo mật và chống nuốt chuỗi rác
 const getAuthConfig = () => {

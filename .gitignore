@@ -1,8 +1,31 @@
+# Dependencies
 node_modules/
 **/node_modules/
+
+# Build
 target/
 **/target/
+dist/
+build/
+
+# IDE
 .idea/
 .vscode/
+
+# Logs
 *.log
+
+# Vendor
 vendor/
+
+# Environment
+.env
+**/.env
+
+# Package manager cache
+.npm/
+.yarn/
+
+# OS
+.DS_Store
+Thumbs.db

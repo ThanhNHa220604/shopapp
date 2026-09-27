@@ -112,6 +112,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true,
       },
+      image_vector: {
+  type: DataTypes.TEXT('long'), // hoặc DataTypes.LONGTEXT
+  allowNull: true
+},
       is_deleted: {
         type: DataTypes.TINYINT(1),
         defaultValue: 0,

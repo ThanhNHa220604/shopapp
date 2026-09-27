@@ -12,8 +12,9 @@ import {
 import productService from "../services/product";
 import cartService from "../services/cart";
 import api from "../services/api";
+import { getImageUrl } from "../utils/imageUrl";
 
-const IMAGE_BASE_URL = "http://localhost:5000/uploads/";
+const PRODUCT_FALLBACK_IMAGE = "https://placehold.co/300x300?text=No+Image";
 const PAGE_SIZE = 15; // 🌟 Số lượng sản phẩm hiển thị trên 1 trang (Khớp với BE)
 
 // 🟢 ÁNH XẠ TIẾNG ANH (URL) -> TIẾNG VIỆT (TÌM KIẾM DB + HIỂN THỊ)
@@ -90,11 +91,7 @@ const ProductList = () => {
   const getProductImage = (p) => {
     if (!p) return "";
     if (p.image_url) return p.image_url;
-    if (p.image) {
-      return p.image.startsWith("http")
-        ? p.image
-        : `${IMAGE_BASE_URL}${p.image}`;
-    }
+    if (p.image) return getImageUrl(p.image, PRODUCT_FALLBACK_IMAGE);
     return "";
   };
 
@@ -594,6 +591,10 @@ const ProductList = () => {
                             src={getProductImage(p)}
                             alt={p.name}
                             className="max-w-[90%] max-h-[90%] object-contain mix-blend-multiply group-hover:scale-105 transition-transform duration-200"
+                            onError={(e) => {
+                              e.target.onerror = null;
+                              e.target.src = PRODUCT_FALLBACK_IMAGE;
+                            }}
                           />
                         ) : (
                           <div className="text-slate-400 text-[10px] font-bold">

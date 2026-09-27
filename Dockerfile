@@ -1,5 +1,5 @@
 # Đổi từ node:18-alpine sang node:22-alpine
-FROM node:22-alpine
+FROM node:22-slim
 
 WORKDIR /shopapp
 

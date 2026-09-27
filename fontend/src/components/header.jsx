@@ -18,12 +18,15 @@ import {
   ShieldCheck,
   Phone,
   Mic,
+  Camera,
 } from "lucide-react";
 import productService from "../services/product";
 import cartService from "../services/cart";
 import authService from "../services/auth";
 import useVoiceSearch from "../hooks/useVoiceSearch";
 import ChatWidget from "./Chat/ChatWidget";
+import ImageSearchModal from "./search/ImageSearchModal"; // sửa lại đường dẫn nếu bạn đặt khác thư mục
+import { getAvatarUrl, getImageUrl } from "../utils/imageUrl";
 
 // MẢNG MENU ĐIỀU HƯỚNG
 const navLinks = [
@@ -54,6 +57,9 @@ const Header = () => {
   const [wishlistItems, setWishlistItems] = useState([]);
   const [wishlistOpen, setWishlistOpen] = useState(false);
   const wishlistRef = useRef(null);
+
+  const [imageSearchOpen, setImageSearchOpen] = useState(false);
+
   // Giữ bản sao mới nhất của allProductsCache để dùng trong các event
   // listener (closure cũ sẽ không thấy state mới nếu không có ref này).
   const allProductsRef = useRef([]);
@@ -70,13 +76,7 @@ const Header = () => {
     return currentFullPath === linkPath;
   };
 
-  const formatAvatarUrl = (avatarPath) => {
-    if (!avatarPath) return "";
-    if (avatarPath.startsWith("http://") || avatarPath.startsWith("https://")) {
-      return avatarPath;
-    }
-    return `http://localhost:3000/api/images/${avatarPath}`;
-  };
+  const formatAvatarUrl = (avatarPath) => getAvatarUrl(avatarPath, "");
 
   const syncCartBadgeCount = async () => {
     try {
@@ -335,6 +335,14 @@ const Header = () => {
                 </button>
               )}
               <button
+                type="button"
+                onClick={() => setImageSearchOpen(true)}
+                title="Tìm kiếm bằng hình ảnh"
+                className="p-1 mr-1 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
+              >
+                <Camera size={16} className="stroke-[2.5]" />
+              </button>
+              <button
                 type="submit"
                 className="text-slate-400 group-focus-within:text-indigo-600 hover:text-indigo-600 transition-colors p-1"
               >
@@ -436,13 +444,7 @@ const Header = () => {
                             className="flex items-center gap-3 p-2 hover:bg-rose-50/60 rounded-xl cursor-pointer transition-colors group border border-transparent hover:border-rose-100"
                           >
                             <img
-                              src={
-                                prod.image &&
-                                (prod.image.startsWith("http://") ||
-                                  prod.image.startsWith("https://"))
-                                  ? prod.image
-                                  : `http://localhost:5000/uploads/${prod.image}`
-                              }
+                              src={getImageUrl(prod.image, "")}
                               className="w-10 h-10 object-contain rounded-lg bg-slate-50 p-1 border border-slate-200/60"
                               alt={prod.name}
                             />
@@ -624,6 +626,16 @@ const Header = () => {
               </button>
             )}
             <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                setImageSearchOpen(true);
+              }}
+              className="p-1.5 mr-1 rounded-lg text-slate-500"
+            >
+              <Camera size={16} />
+            </button>
+            <button
               type="submit"
               className="p-1.5 bg-indigo-600 text-white rounded-lg flex items-center justify-center"
             >
@@ -653,6 +665,11 @@ const Header = () => {
           </div>
         </div>
       )}
+
+      <ImageSearchModal
+        open={imageSearchOpen}
+        onClose={() => setImageSearchOpen(false)}
+      />
     </header>
   );
 };

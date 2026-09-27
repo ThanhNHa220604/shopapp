@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { bannerService } from "./services/media"; // Đường dẫn tới file news.js của bạn
+// ⚠️ Chỉnh lại đường dẫn "../utils/imageUrl" cho đúng vị trí thực tế của
+// file này trong dự án (số dấu "../" tùy theo file nằm sâu bao nhiêu cấp
+// so với thư mục src/utils/imageUrl.js đã tạo ở các bước trước).
+import { getImageUrl } from "../utils/imageUrl";
+
+const BANNER_FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?q=80&w=1500";
 
 const BannerSlider = () => {
   const [banners, setBanners] = useState([]);
@@ -78,7 +85,7 @@ const BannerSlider = () => {
                   {banner.subTitle || "Thế giới công nghệ cao cấp"}
                 </span>
                 <h2 style={{ fontSize: "32px", margin: "10px 0" }}>
-                  {banner.title || "Tối giản. Hiệu năng. Tinh tế."}
+                  {banner.name || "Tối giản. Hiệu năng. Tinh tế."}
                 </h2>
                 <p style={{ opacity: 0.8, maxWidth: "500px" }}>
                   {banner.description}
@@ -97,11 +104,15 @@ const BannerSlider = () => {
                   Khám phá ngay
                 </button>
               </div>
-              {banner.imageUrl && (
+              {banner.image && (
                 <img
-                  src={banner.imageUrl}
-                  alt={banner.title}
+                  src={getImageUrl(banner.image, BANNER_FALLBACK_IMAGE)}
+                  alt={banner.title || banner.name}
                   style={{ maxWidth: "45%", borderRadius: "8px" }}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = BANNER_FALLBACK_IMAGE;
+                  }}
                 />
               )}
             </div>

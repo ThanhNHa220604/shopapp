@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { bannerService } from "../../services/media";
-
-const IMAGE_BASE_URL = "http://localhost:5000/uploads/";
+import { getImageUrl as buildImageUrl } from "../../utils/imageUrl";
 
 const HeroBanner = () => {
   const navigate = useNavigate();
@@ -11,13 +10,7 @@ const HeroBanner = () => {
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [loadingBanners, setLoadingBanners] = useState(true);
 
-  const getImageUrl = (image) => {
-    if (!image) return "";
-    if (image.startsWith("http://") || image.startsWith("https://")) {
-      return image;
-    }
-    return `${IMAGE_BASE_URL}${image}`;
-  };
+  const getImageUrl = (image) => buildImageUrl(image, "");
 
   useEffect(() => {
     const fetchBanners = async () => {

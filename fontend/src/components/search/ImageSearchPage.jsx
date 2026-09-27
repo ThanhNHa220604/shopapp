@@ -36,7 +36,7 @@ const ImageSearchPage = () => {
     <div className="min-h-screen bg-slate-50">
       {/* HEADER RIÊNG CỦA TRANG KẾT QUẢ */}
       <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-3">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate("/")}
@@ -55,7 +55,7 @@ const ImageSearchPage = () => {
       </div>
 
       {/* NỘI DUNG */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
         {previewUrl && (
           <div className="mb-6 flex items-center gap-3">
             <img
@@ -63,7 +63,9 @@ const ImageSearchPage = () => {
               alt="Ảnh đã tìm kiếm"
               className="w-16 h-16 object-cover rounded-xl border border-slate-200"
             />
-            <p className="text-xs text-slate-500">Ảnh bạn đã dùng để tìm kiếm</p>
+            <p className="text-xs text-slate-500">
+              Ảnh bạn đã dùng để tìm kiếm
+            </p>
           </div>
         )}
 

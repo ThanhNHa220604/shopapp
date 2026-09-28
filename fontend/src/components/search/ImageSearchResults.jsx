@@ -15,7 +15,7 @@ export default function ImageSearchResults({ results }) {
       <p className="text-xs font-bold text-slate-500 mb-3">
         Tìm thấy {results.length} sản phẩm tương tự:
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
         {results.map((product) => {
           const hasDiscount =
             product.oldprice && product.oldprice > product.price;
@@ -37,9 +37,6 @@ export default function ImageSearchResults({ results }) {
                     -{discountPercent}%
                   </span>
                 )}
-                <span className="absolute top-2 right-2 bg-emerald-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md z-10">
-                  Giống {product.similarity}%
-                </span>
                 {product.image ? (
                   <img
                     src={getImageUrl(product.image, "")}

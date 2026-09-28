@@ -65,7 +65,7 @@
 
   "sidebar": {
   "adminPanel": "Admin Panel",
-  "overview": "Overview",
+  "Dashboard": "Overview",
   "products": "Products",
   "myProducts": "My products",
   "deletedProducts": "Deleted products",

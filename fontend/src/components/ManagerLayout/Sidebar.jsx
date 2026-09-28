@@ -79,9 +79,7 @@ const Sidebar = () => {
         </div>
 
         <div>
-          <h1 className="font-black text-base leading-tight">
-            ThanHNha
-          </h1>
+          <h1 className="font-black text-base leading-tight">ThanHNha</h1>
 
           <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase mt-0.5">
             {t("header.managerPanel")}
@@ -99,7 +97,7 @@ const Sidebar = () => {
           }
         >
           <LayoutGrid className="w-5 h-5 stroke-[2.5] shrink-0" />
-          <span>{t("sidebar.dashboard")}</span>
+          <span>{t("sidebar.overview")}</span>
         </Link>
 
         <Link
@@ -148,7 +146,7 @@ const Sidebar = () => {
           } relative`}
         >
           <MessageCircle className="w-5 h-5 stroke-[2.5] shrink-0" />
-          <span>{t("sidebar.chats")}</span>
+          <span>{t("sidebar.customerMessages")}</span>
 
           {unreadChatCount > 0 && (
             <span className="absolute right-4 top-1/2 -translate-y-1/2 bg-rose-600 text-white font-black text-[10px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center border-2 border-[#1a1c26]">

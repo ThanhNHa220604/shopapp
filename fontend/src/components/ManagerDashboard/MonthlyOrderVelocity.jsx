@@ -1,95 +1,71 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { TrendingUp } from "lucide-react";
 
-const MonthlyOrderVelocity = ({ monthChartData, orders = [] }) => {
-  // 1. XỬ LÝ DỮ LIỆU: Ưu tiên dùng monthChartData truyền từ Parent, nếu không có mới tự tính từ orders
-  const chartData = useMemo(() => {
-    // Nếu Dashboard đã tính sẵn monthChartData và truyền xuống -> dùng luôn!
-    if (monthChartData && monthChartData.length > 0) {
-      return monthChartData;
-    }
+// Nội dung tiêu đề theo bộ lọc (dữ liệu điểm do ManagerDashboard tính sẵn)
+const COPY = {
+  week: {
+    title: "Weekly Order Velocity",
+    desc: "Số lượng đơn hàng theo tuần trong 12 tuần gần nhất",
+    badge: "7 ",
+  },
+  month: {
+    title: "Monthly Order Velocity",
+    desc: "Số lượng đơn hàng theo tháng, 12 tháng tính đến tháng đã chọn",
+    badge: "12 tháng",
+  },
+  year: {
+    title: "Monthly Order Velocity",
+    desc: "Số lượng đơn hàng theo từng tháng của năm hiện tại",
+    badge: `Năm ${new Date().getFullYear()}`,
+  },
+};
 
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth(); // 0 -> 11
+const generateSmoothPath = (pts) => {
+  if (!pts || pts.length === 0) return "";
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+    const cpX = (p0.x + p1.x) / 2;
+    d += ` C ${cpX} ${p0.y}, ${cpX} ${p1.y}, ${p1.x} ${p1.y}`;
+  }
+  return d;
+};
 
-    const monthNames = [
-      "Th1",
-      "Th2",
-      "Th3",
-      "Th4",
-      "Th5",
-      "Th6",
-      "Th7",
-      "Th8",
-      "Th9",
-      "Th10",
-      "Th11",
-      "Th12",
-    ];
-
-    // Khởi tạo khung 12 tháng
-    const months = monthNames.map((label, index) => ({
-      monthIndex: index,
-      label,
-      isCurrent: index === currentMonth,
-      count: 0,
-    }));
-
-    // Gom đơn hàng thực tế vào từng tháng
-    orders.forEach((order) => {
-      const rawDate = order.created_at || order.createdAt || order.date;
-      if (rawDate) {
-        const d = new Date(rawDate);
-        if (d.getFullYear() === currentYear) {
-          const mIdx = d.getMonth();
-          if (months[mIdx]) {
-            months[mIdx].count += 1;
-          }
+const MonthlyOrderVelocity = ({
+  monthChartData = [],
+  period = "month",
+  year = "all",
+}) => {
+  // Khi chọn 1 năm cụ thể, biểu đồ này hiện 5 năm để làm ngữ cảnh
+  const copy =
+    period === "year" && year !== "all"
+      ? {
+          title: "Yearly Order Velocity",
+          desc: "Số lượng đơn hàng theo năm trong 5 năm gần nhất",
+          badge: "5 năm",
         }
-      }
-    });
-
-    // Tính tọa độ (X, Y) cho 12 điểm trên SVG (Khung 500x150)
-    const maxVal = Math.max(...months.map((m) => m.count), 1);
-    return months.map((m, index) => {
-      const x = (index / 11) * 500; // Chia đều 12 điểm trên trục ngang 500px
-      const y = 130 - (m.count / maxVal) * 90; // Quy đổi độ cao Y
-      return { ...m, x, y };
-    });
-  }, [monthChartData, orders]);
-
-  // 2. HÀM VẼ ĐƯỜNG CONG MƯỢT (BÉZIER CURVE)
-  const generateSmoothPath = (pts) => {
-    if (!pts || pts.length === 0) return "";
-    let d = `M ${pts[0].x} ${pts[0].y}`;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i];
-      const p1 = pts[i + 1];
-      const cpX = (p0.x + p1.x) / 2;
-      d += ` C ${cpX} ${p0.y}, ${cpX} ${p1.y}, ${p1.x} ${p1.y}`;
-    }
-    return d;
-  };
+      : COPY[period] || COPY.month;
+  const chartData = monthChartData;
 
   const strokePath = generateSmoothPath(chartData);
   const areaPath = strokePath ? `${strokePath} L 500 150 L 0 150 Z` : "";
 
   return (
-    <div className="bg-[#14161f] border border-white/5 rounded-2xl p-5 flex flex-col justify-between hover:border-cyan-500/20 transition-all">
+    <div className="bg-white dark:bg-[#14161f] border border-slate-200 dark:border-white/5 rounded-2xl p-5 flex flex-col justify-between hover:border-cyan-500/20 transition-all">
       {/* HEADER BIỂU ĐỒ */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-            <TrendingUp className="w-3.5 h-3.5 text-cyan-400" /> Monthly Order
-            Velocity
+          <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5 text-cyan-500 dark:text-cyan-400" />{" "}
+            {copy.title}
           </h3>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            Số lượng đơn hàng tạo ra trong 12 tháng năm{" "}
-            {new Date().getFullYear()}
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+            {copy.desc}
           </p>
         </div>
-        <span className="bg-cyan-500/10 text-cyan-400 text-[9px] font-bold px-2 py-0.5 rounded-full border border-cyan-500/20">
-          Năm {new Date().getFullYear()}
+        <span className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-[9px] font-bold px-2 py-0.5 rounded-full border border-cyan-500/20 shrink-0">
+          {copy.badge}
         </span>
       </div>
 
@@ -107,10 +83,8 @@ const MonthlyOrderVelocity = ({ monthChartData, orders = [] }) => {
             </linearGradient>
           </defs>
 
-          {/* Vùng màu mờ dưới đường cong */}
           {areaPath && <path d={areaPath} fill="url(#cyanGlow)" />}
 
-          {/* Đường vẽ chính */}
           {strokePath && (
             <path
               d={strokePath}
@@ -121,27 +95,35 @@ const MonthlyOrderVelocity = ({ monthChartData, orders = [] }) => {
             />
           )}
 
-          {/* Các mốc điểm nút (Dots) */}
           {chartData.map((pt, i) => (
             <g key={i} className="group/node cursor-pointer">
               <circle
                 cx={pt.x}
                 cy={pt.y}
                 r="4"
-                className="fill-cyan-400 stroke-[#14161f] stroke-[3] transition-all group-hover/node:r-6"
+                className="fill-cyan-400 stroke-white dark:stroke-[#14161f] stroke-[3] transition-all"
               />
-              <title>{`${pt.label}: ${pt.count} đơn hàng`}</title>
+              <title>{`${pt.title || pt.label}: ${pt.count} đơn hàng`}</title>
             </g>
           ))}
         </svg>
       </div>
 
-      {/* TRỤC HOÀNH HÀNG 12 THÁNG (Th1 -> Th12) */}
-      <div className="grid grid-cols-12 text-center text-[9px] font-bold text-slate-400 pt-3 border-t border-white/5">
+      {/* TRỤC HOÀNH: số cột thay đổi theo bộ lọc (12 hoặc 5 mốc) */}
+      <div
+        className="grid text-center text-[9px] font-bold text-slate-500 dark:text-slate-400 pt-3 border-t border-slate-100 dark:border-white/5"
+        style={{
+          gridTemplateColumns: `repeat(${Math.max(chartData.length, 1)}, minmax(0, 1fr))`,
+        }}
+      >
         {chartData.map((d, index) => (
           <span
             key={index}
-            className={d.isCurrent ? "text-cyan-400 font-extrabold" : ""}
+            className={
+              d.isCurrent
+                ? "text-cyan-600 dark:text-cyan-400 font-extrabold"
+                : ""
+            }
           >
             {d.label}
           </span>

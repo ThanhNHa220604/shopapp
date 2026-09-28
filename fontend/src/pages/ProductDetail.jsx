@@ -542,6 +542,19 @@ const ProductDetail = () => {
       return;
     }
 
+    // Chưa đăng nhập -> hiện modal "Yêu cầu đăng nhập" giống nút Thêm vào giỏ hàng
+    const activeToken =
+      localStorage.getItem("token") || localStorage.getItem("accessToken");
+    if (!activeToken) {
+      setShowErrorModal({
+        isOpen: true,
+        title: "Yêu cầu đăng nhập",
+        message:
+          "Vui lòng đăng nhập hệ thống trước khi thực hiện hành động này.",
+      });
+      return;
+    }
+
     const role = getRoleFromToken();
     if (!isUserRole(role)) {
       setShowErrorModal({

@@ -27,6 +27,7 @@ import useVoiceSearch from "../hooks/useVoiceSearch";
 import ChatWidget from "./Chat/ChatWidget";
 import ImageSearchModal from "./search/ImageSearchModal"; // sửa lại đường dẫn nếu bạn đặt khác thư mục
 import { getAvatarUrl, getImageUrl } from "../utils/imageUrl";
+import { getWishlist, saveWishlist } from "../utils/wishlist";
 
 // MẢNG MENU ĐIỀU HƯỚNG
 const navLinks = [
@@ -127,13 +128,14 @@ const Header = () => {
   };
 
   const syncWishlist = () => {
-    const favs = JSON.parse(localStorage.getItem("wishlist")) || [];
+    // Đọc wishlist của ĐÚNG người đang đăng nhập (hoặc khách vãng lai)
+    const favs = getWishlist();
     const cleaned = cleanWishlistAgainstProducts(favs, allProductsRef.current);
 
     // Nếu có sản phẩm bị loại bỏ (đã xóa/ngừng bán), ghi lại localStorage
     // để dọn rác luôn, không chỉ ẩn ở giao diện.
     if (cleaned.length !== favs.length) {
-      localStorage.setItem("wishlist", JSON.stringify(cleaned));
+      saveWishlist(cleaned, { notify: false });
     }
     setWishlistItems(cleaned);
   };
@@ -194,6 +196,9 @@ const Header = () => {
     window.addEventListener("wishlistUpdated", syncWishlist);
     window.addEventListener("storage", checkLoginStatus);
     window.addEventListener("userUpdated", checkLoginStatus);
+    // Đổi tài khoản (đăng nhập/đăng xuất) -> nạp lại wishlist tương ứng
+    window.addEventListener("storage", syncWishlist);
+    window.addEventListener("userUpdated", syncWishlist);
 
     const handleClickOutside = (event) => {
       if (
@@ -214,12 +219,15 @@ const Header = () => {
       window.removeEventListener("wishlistUpdated", syncWishlist);
       window.removeEventListener("storage", checkLoginStatus);
       window.removeEventListener("userUpdated", checkLoginStatus);
+      window.removeEventListener("storage", syncWishlist);
+      window.removeEventListener("userUpdated", syncWishlist);
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
   useEffect(() => {
     checkLoginStatus();
+    syncWishlist(); // đăng nhập xong chuyển trang -> hiện đúng wishlist của user
   }, [location]);
 
   useEffect(() => {
@@ -239,6 +247,8 @@ const Header = () => {
     setUserRole(null);
     setCartCount(0);
     setUserAvatarUrl("");
+    setWishlistItems([]);
+    setWishlistOpen(false);
     navigate("/");
     window.location.reload();
   };

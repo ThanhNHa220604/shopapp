@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import axiosOriginal from "axios";
@@ -30,18 +30,57 @@ const toLocalDateStr = (date) => {
   return `${y}-${m}-${d}`;
 };
 
+// Lấy ngày tạo đơn (trả về null nếu thiếu hoặc không hợp lệ)
+const getOrderDate = (order) => {
+  const raw = order.created_at || order.createdAt || order.date;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+// Đơn đã hoàn thành / đã giao
+const isCompletedOrder = (o) => {
+  const st = String(o.status || o.order_status || "").toLowerCase();
+  return (
+    st === "4" ||
+    st === "completed" ||
+    st === "delivered" ||
+    st === "đã giao" ||
+    st === "hoàn thành"
+  );
+};
+
+// Khoảng thời gian [start, end) theo giờ địa phương cho từng bộ lọc
+const getPeriodRange = (period, selectedMonth, selectedYear) => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const d = now.getDate();
+  if (period === "week")
+    return { start: new Date(y, m, d - 6), end: new Date(y, m, d + 1) };
+  if (period === "month")
+    return {
+      start: new Date(y, selectedMonth, 1),
+      end: new Date(y, selectedMonth + 1, 1),
+    };
+  // Năm: chọn 1 năm cụ thể, hoặc "all" = năm hiện tại + 4 năm trước (5 năm)
+  if (selectedYear !== "all")
+    return { start: new Date(selectedYear, 0, 1), end: new Date(selectedYear + 1, 0, 1) };
+  return { start: new Date(y - 4, 0, 1), end: new Date(y + 1, 0, 1) };
+};
+
 const ManagerDashboard = () => {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const [totalProductsCount, setTotalProductsCount] = useState(0);
-  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [period, setPeriod] = useState("week"); // "week" | "month" | "year"
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()); // 0 -> 11
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear()); // năm đang chọn
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState(null);
 
-  const [weekChartData, setWeekChartData] = useState([]);
-  const [monthChartData, setMonthChartData] = useState([]);
 
   // Phân biệt rõ 3 trạng thái: đang tải / lỗi (không tải được) / không có
   // dữ liệu thật. Trước đây nếu fetchUserProfile lỗi, `loading` bị kẹt ở
@@ -84,23 +123,6 @@ const ManagerDashboard = () => {
       const finalOrders = Array.isArray(rawOrders) ? rawOrders : [];
       setOrders(finalOrders);
 
-      const revSum = finalOrders
-        .filter((o) => {
-          const st = String(o.status || o.order_status || "").toLowerCase();
-          return (
-            st === "4" ||
-            st === "completed" ||
-            st === "delivered" ||
-            st === "đã giao" ||
-            st === "hoàn thành"
-          );
-        })
-        .reduce(
-          (sum, o) =>
-            sum + Number(o.total ?? o.total_amount ?? o.total_price ?? 0),
-          0,
-        );
-      setTotalRevenue(revSum);
     } catch (error) {
       console.error("Lỗi tải dữ liệu Dashboard:", error?.config?.url, error);
 
@@ -119,88 +141,191 @@ const ManagerDashboard = () => {
     }
   };
 
-  const processWeeklyAndMonthlyData = (ordersList) => {
-    const dayLabels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
-    const monthLabels = [
-      "Th1",
-      "Th2",
-      "Th3",
-      "Th4",
-      "Th5",
-      "Th6",
-      "Th7",
-      "Th8",
-      "Th9",
-      "Th10",
-      "Th11",
-      "Th12",
-    ];
+  // Dữ liệu biểu đồ đường bên trái: đổi theo bộ lọc Tuần / Tháng / Năm
+  const buildChartData = (ordersList, currentPeriod, selMonth, selYear) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    let buckets = [];
 
-    const days = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = toLocalDateStr(d);
-      days.push({
-        dateStr,
-        label: dayLabels[d.getDay()],
-        isCurrent: i === 0,
-        count: 0,
-      });
-    }
-
-    ordersList.forEach((order) => {
-      const rawDate = order.created_at || order.createdAt || order.date;
-      if (rawDate) {
-        const parsed = new Date(rawDate);
-        if (isNaN(parsed.getTime())) return;
-        const orderDateStr = toLocalDateStr(parsed);
-        const dayObj = days.find((d) => d.dateStr === orderDateStr);
-        if (dayObj) dayObj.count += 1;
+    if (currentPeriod === "week") {
+      const dayLabels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(year, month, now.getDate() - i);
+        buckets.push({
+          key: toLocalDateStr(d),
+          dateStr: toLocalDateStr(d),
+          label: dayLabels[d.getDay()],
+          isCurrent: i === 0,
+          count: 0,
+        });
       }
-    });
-
-    const maxWeekVal = Math.max(...days.map((d) => d.count), 1);
-    const weekPoints = days.map((d, index) => {
-      const x = (index / 6) * 500;
-      const y = 130 - (d.count / maxWeekVal) * 90;
-      return { ...d, x, y };
-    });
-    setWeekChartData(weekPoints);
-
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth();
-
-    const months = monthLabels.map((label, index) => ({
-      monthIndex: index,
-      label,
-      isCurrent: index === currentMonth,
-      count: 0,
-    }));
-
-    ordersList.forEach((order) => {
-      const rawDate = order.created_at || order.createdAt || order.date;
-      if (rawDate) {
-        const d = new Date(rawDate);
-        if (d.getFullYear() === currentYear) {
-          const mIdx = d.getMonth();
-          if (months[mIdx]) months[mIdx].count += 1;
+    } else if (currentPeriod === "month") {
+      const daysInMonth = new Date(year, selMonth + 1, 0).getDate();
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d = new Date(year, selMonth, day);
+        buckets.push({
+          key: toLocalDateStr(d),
+          dateStr: toLocalDateStr(d),
+          label: String(day),
+          isCurrent: selMonth === month && day === now.getDate(),
+          count: 0,
+        });
+      }
+    } else {
+      if (selYear === "all") {
+        for (let i = 4; i >= 0; i--) {
+          const yr = year - i;
+          buckets.push({
+            key: String(yr),
+            dateStr: String(yr),
+            label: String(yr),
+            isCurrent: i === 0,
+            count: 0,
+          });
+        }
+      } else {
+        for (let mo = 0; mo < 12; mo++) {
+          const key = `${selYear}-${String(mo + 1).padStart(2, "0")}`;
+          buckets.push({
+            key,
+            dateStr: key,
+            label: `Th${mo + 1}`,
+            isCurrent: selYear === year && mo === month,
+            count: 0,
+          });
         }
       }
+    }
+
+    const byKey = new Map(buckets.map((b) => [b.key, b]));
+    ordersList.forEach((order) => {
+      const d = getOrderDate(order);
+      if (!d) return;
+      const key =
+        currentPeriod === "year"
+          ? selYear === "all"
+            ? String(d.getFullYear()) // "YYYY"
+            : toLocalDateStr(d).slice(0, 7) // "YYYY-MM"
+          : toLocalDateStr(d);
+      const bucket = byKey.get(key);
+      if (bucket) bucket.count += 1;
     });
 
-    const maxMonthVal = Math.max(...months.map((m) => m.count), 1);
-    const monthPoints = months.map((m, index) => {
-      const x = (index / 11) * 500;
-      const y = 130 - (m.count / maxMonthVal) * 90;
-      return { ...m, x, y };
-    });
-    setMonthChartData(monthPoints);
+    const maxVal = Math.max(...buckets.map((b) => b.count), 1);
+    const last = Math.max(buckets.length - 1, 1);
+    return buckets.map((b, index) => ({
+      ...b,
+      x: (index / last) * 500,
+      y: 130 - (b.count / maxVal) * 90,
+    }));
   };
 
-  useEffect(() => {
-    processWeeklyAndMonthlyData(orders);
-  }, [orders]);
+  // Biểu đồ xu hướng ở giữa: "thu nhỏ" ra ngoài kỳ đang chọn để so sánh
+  //   Tuần  -> 12 tuần gần nhất
+  //   Tháng -> 12 tháng gần nhất
+  //   Năm   -> 12 tháng của năm hiện tại (biểu đồ trái đã hiện 5 năm)
+  const buildTrendData = (ordersList, currentPeriod, selMonth, selYear) => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const mondayOf = (d) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+    let buckets = [];
+    let keyOf;
+
+    if (currentPeriod === "week") {
+      const thisMonday = mondayOf(now);
+      for (let i = 11; i >= 0; i--) {
+        const start = new Date(
+          thisMonday.getFullYear(),
+          thisMonday.getMonth(),
+          thisMonday.getDate() - 7 * i,
+        );
+        const label = `${start.getDate()}/${start.getMonth() + 1}`;
+        buckets.push({
+          key: toLocalDateStr(start),
+          label,
+          title: `Tuần ${label}`,
+          isCurrent: i === 0,
+          count: 0,
+        });
+      }
+      keyOf = (d) => toLocalDateStr(mondayOf(d));
+    } else if (currentPeriod === "month") {
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(y, selMonth - i, 1);
+        buckets.push({
+          key: toLocalDateStr(d).slice(0, 7),
+          label: `Th${d.getMonth() + 1}`,
+          title: `Th${d.getMonth() + 1}/${d.getFullYear()}`,
+          isCurrent: i === 0,
+          count: 0,
+        });
+      }
+      keyOf = (d) => toLocalDateStr(d).slice(0, 7);
+    } else {
+      if (selYear === "all") {
+        // 12 tháng của năm hiện tại
+        for (let mo = 0; mo < 12; mo++) {
+          buckets.push({
+            key: `${y}-${String(mo + 1).padStart(2, "0")}`,
+            label: `Th${mo + 1}`,
+            title: `Th${mo + 1}/${y}`,
+            isCurrent: mo === now.getMonth(),
+            count: 0,
+          });
+        }
+        keyOf = (d) => toLocalDateStr(d).slice(0, 7);
+      } else {
+        // 5 năm gần nhất, tô nổi bật năm đang chọn
+        for (let i = 4; i >= 0; i--) {
+          const yr = y - i;
+          buckets.push({
+            key: String(yr),
+            label: String(yr),
+            title: `Năm ${yr}`,
+            isCurrent: yr === selYear,
+            count: 0,
+          });
+        }
+        keyOf = (d) => String(d.getFullYear());
+      }
+    }
+
+    const byKey = new Map(buckets.map((b) => [b.key, b]));
+    ordersList.forEach((order) => {
+      const d = getOrderDate(order);
+      const bucket = d && byKey.get(keyOf(d));
+      if (bucket) bucket.count += 1;
+    });
+
+    const maxVal = Math.max(...buckets.map((b) => b.count), 1);
+    const last = Math.max(buckets.length - 1, 1);
+    return buckets.map((b, index) => ({
+      ...b,
+      x: (index / last) * 500,
+      y: 130 - (b.count / maxVal) * 90,
+    }));
+  };
+
+  // Đơn hàng nằm trong khoảng thời gian của bộ lọc
+  const filteredOrders = useMemo(() => {
+    const { start, end } = getPeriodRange(period, selectedMonth, selectedYear);
+    return orders.filter((o) => {
+      const d = getOrderDate(o);
+      return d && d >= start && d < end;
+    });
+  }, [orders, period, selectedMonth, selectedYear]);
+
+  const chartData = useMemo(
+    () => buildChartData(orders, period, selectedMonth, selectedYear),
+    [orders, period, selectedMonth, selectedYear],
+  );
+
+  const trendData = useMemo(
+    () => buildTrendData(orders, period, selectedMonth, selectedYear),
+    [orders, period, selectedMonth, selectedYear],
+  );
 
   const generateSmoothPath = (pts) => {
     if (!pts || pts.length === 0) return "";
@@ -260,6 +385,7 @@ const ManagerDashboard = () => {
     fetchUserProfile();
   }, []);
 
+  // Badge chờ duyệt ở Header luôn tính trên TOÀN BỘ đơn, không theo bộ lọc
   const pendingOrders = orders.filter((o) => {
     const st = String(o.status || o.order_status || "").toLowerCase();
     return (
@@ -267,20 +393,19 @@ const ManagerDashboard = () => {
     );
   }).length;
 
-  const completedOrders = orders.filter((o) => {
-    const st = String(o.status || o.order_status || "").toLowerCase();
-    return (
-      st === "4" ||
-      st === "completed" ||
-      st === "delivered" ||
-      st === "đã giao" ||
-      st === "hoàn thành"
-    );
-  }).length;
+  // Các số liệu dưới đây thay đổi theo bộ lọc Tuần / Tháng / Năm
+  const completedOrders = filteredOrders.filter(isCompletedOrder).length;
 
-  const weekStroke = generateSmoothPath(weekChartData);
+  const totalRevenue = filteredOrders
+    .filter(isCompletedOrder)
+    .reduce(
+      (sum, o) => sum + Number(o.total ?? o.total_amount ?? o.total_price ?? 0),
+      0,
+    );
+
+  const weekStroke = generateSmoothPath(chartData);
   const weekArea = weekStroke ? `${weekStroke} L 500 150 L 0 150 Z` : "";
-  const hasWeekData = weekChartData.some((d) => d.count > 0);
+  const hasWeekData = chartData.some((d) => d.count > 0);
 
   const formattedRevenue = `${Number(totalRevenue).toLocaleString("vi-VN")} đ`;
 
@@ -291,8 +416,15 @@ const ManagerDashboard = () => {
 
         <WelcomeBanner
           userProfile={userProfile}
-          pendingOrders={pendingOrders}
-          totalOrders={orders.length}
+          loading={loading}
+          onRefresh={() => fetchData()}
+          language={i18n.language?.slice(0, 2)}
+          period={period}
+          onPeriodChange={setPeriod}
+          month={selectedMonth}
+          onMonthChange={setSelectedMonth}
+          year={selectedYear}
+          onYearChange={setSelectedYear}
         />
 
         {loadError && (
@@ -320,7 +452,7 @@ const ManagerDashboard = () => {
 
           <MetricCard
             icon={CheckCircle2}
-            value={loading ? "..." : orders.length}
+            value={loading ? "..." : filteredOrders.length}
             title={t("dashboard.totalOrders")}
             unit={t("dashboard.completedUnit", { count: completedOrders })}
             colorTheme="emerald"
@@ -340,10 +472,28 @@ const ManagerDashboard = () => {
               <div>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />{" "}
-                  {t("dashboard.weeklyOrdersTitle")}
+                  {t(`dashboard.chartTitle_${period}`, {
+                    defaultValue: {
+                      week: "Số lượng đơn hàng tuần qua",
+                      month: `Số lượng đơn hàng trong tháng ${selectedMonth + 1}`,
+                      year:
+                        selectedYear === "all"
+                          ? "Số lượng đơn hàng trong 5 năm gần nhất"
+                          : `Số lượng đơn hàng trong năm ${selectedYear}`,
+                    }[period],
+                  })}
                 </h3>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  {t("dashboard.weeklyOrdersDesc")}
+                  {t(`dashboard.chartDesc_${period}`, {
+                    defaultValue: {
+                      week: "Đơn hàng tạo ra trong 7 ngày qua",
+                      month: `Đơn hàng tạo ra theo từng ngày trong tháng ${selectedMonth + 1}`,
+                      year:
+                        selectedYear === "all"
+                          ? "Đơn hàng tạo ra theo từng năm, từ năm nay lùi về 4 năm trước"
+                          : `Đơn hàng tạo ra theo từng tháng trong năm ${selectedYear}`,
+                    }[period],
+                  })}
                 </p>
               </div>
               <span className="bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[9px] font-bold px-2 py-0.5 rounded-full border border-orange-500/20 flex items-center gap-1">
@@ -380,12 +530,12 @@ const ManagerDashboard = () => {
                     strokeLinecap="round"
                   />
                 )}
-                {weekChartData.map((pt, i) => (
+                {chartData.map((pt, i) => (
                   <g key={i} className="group/node cursor-pointer">
                     <circle
                       cx={pt.x}
                       cy={pt.y}
-                      r="5"
+                      r={chartData.length > 12 ? 3 : 5}
                       className="fill-orange-500 stroke-white dark:stroke-[#14161f] stroke-[3] transition-all group-hover/node:r-7"
                     />
                     <title>
@@ -400,24 +550,35 @@ const ManagerDashboard = () => {
               </svg>
             </div>
 
-            <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-500 dark:text-slate-400 pt-3 border-t border-slate-100 dark:border-white/5">
-              {weekChartData.map((d, index) => (
-                <span
-                  key={index}
-                  className={
-                    d.isCurrent
-                      ? "text-orange-600 dark:text-orange-400 font-extrabold"
-                      : ""
-                  }
-                >
-                  {d.label}
-                </span>
-              ))}
+            <div
+              className="flex justify-between text-center text-[10px] font-bold text-slate-500 dark:text-slate-400 pt-3 border-t border-slate-100 dark:border-white/5"
+            >
+              {chartData.map((d, index) => {
+                const step = chartData.length > 12 ? 5 : 1;
+                const show =
+                  index % step === 0 || index === chartData.length - 1;
+                return (
+                  <span
+                    key={index}
+                    className={`flex-1 ${
+                      d.isCurrent
+                        ? "text-orange-600 dark:text-orange-400 font-extrabold"
+                        : ""
+                    }`}
+                  >
+                    {show ? d.label : ""}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
-          <MonthlyOrderVelocity monthChartData={monthChartData} />
-          <OrderStatusDonut orders={orders} />
+          <MonthlyOrderVelocity
+            monthChartData={trendData}
+            period={period}
+            year={selectedYear}
+          />
+          <OrderStatusDonut orders={filteredOrders} />
         </div>
       </div>
     </div>

@@ -21,6 +21,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+const IMAGE_BASE = "http://localhost:5000/api/images";
+
 const OrderTable = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -375,7 +377,11 @@ const OrderTable = () => {
 
     if (!rawImage) return null;
     if (rawImage.startsWith("http")) return rawImage;
-    return `http://localhost:5000/api/images/${rawImage.replace(/^\/+/, "")}`;
+
+    // DB lưu dạng "uploads/xxx.webp" -> bỏ tiền tố "uploads/" để khớp route /api/images/<tên file>
+    // Nếu backend phục vụ ảnh tại /uploads/... thì đổi thành: `http://localhost:5000/${path}` (không bỏ "uploads/")
+    const path = rawImage.replace(/^\/+/, "").replace(/^uploads\//, "");
+    return `${IMAGE_BASE}/${path}`;
   };
 
   const fetchData = async (page = 1, status = "ALL") => {
@@ -1008,6 +1014,9 @@ const OrderTable = () => {
                                   <img
                                     src={pImage}
                                     alt={pName}
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = "none";
+                                    }}
                                     className="w-12 h-12 object-cover rounded-lg border border-white/10 shrink-0"
                                   />
                                 )}

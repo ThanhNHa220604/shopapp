@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   User,
   Package,
@@ -11,8 +11,40 @@ import {
 import { useNavigate } from "react-router-dom";
 import authService from "../../services/auth";
 
+// Chuẩn hóa URL avatar -> luôn ra dạng {origin backend}/uploads/<tên file>
+// Xử lý được mọi dạng: "xxx.png", "/uploads/xxx.png", "/api/images/xxx.png",
+// và cả URL bị lặp "/api/images//api/images/xxx.png"
+const formatAvatarUrl = (avatarPath) => {
+  if (!avatarPath || typeof avatarPath !== "string") return "";
+
+  const p = avatarPath.trim();
+  if (/^(data|blob):/i.test(p)) return p;
+
+  // Ảnh từ bên ngoài (Google, Facebook...) thì giữ nguyên
+  if (/^https?:\/\//i.test(p) && !/\/(api\/images|uploads)\//i.test(p)) {
+    return p;
+  }
+
+  // Chỉ lấy tên file cuối cùng, bỏ hết mọi prefix (kể cả bị lặp)
+  const clean = p.split("?")[0].split("#")[0];
+  const filename = clean.substring(clean.lastIndexOf("/") + 1);
+  if (!filename) return "";
+
+  const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
+  const origin = apiUrl.replace(/\/api\/?$/, "");
+
+  return `${origin}/uploads/${filename}`;
+};
+
 const Sidebar = ({ profile, active, setActive, setIsEditing, setSaveMsg }) => {
   const navigate = useNavigate();
+  const [avatarError, setAvatarError] = useState(false);
+  const avatarUrl = formatAvatarUrl(profile?.avatar);
+
+  // Đổi avatar mới thì thử tải lại
+  useEffect(() => {
+    setAvatarError(false);
+  }, [avatarUrl]);
 
   const handleLogout = () => {
     authService.logout();
@@ -34,11 +66,12 @@ const Sidebar = ({ profile, active, setActive, setIsEditing, setSaveMsg }) => {
       <div className="p-7 rounded-[28px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-sky-100/90 via-blue-50/40 to-transparent mb-6 relative overflow-hidden">
         <div className="relative z-10">
           <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4 overflow-hidden border border-slate-100 shadow-sm">
-            {profile?.avatar ? (
+            {avatarUrl && !avatarError ? (
               <img
-                src={profile.avatar}
+                src={avatarUrl}
                 alt="Avatar"
                 className="w-full h-full object-cover"
+                onError={() => setAvatarError(true)}
               />
             ) : (
               <User className="w-8 h-8 text-slate-400" />

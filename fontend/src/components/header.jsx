@@ -26,7 +26,7 @@ import authService from "../services/auth";
 import useVoiceSearch from "../hooks/useVoiceSearch";
 import ChatWidget from "./Chat/ChatWidget";
 import ImageSearchModal from "./search/ImageSearchModal"; // sửa lại đường dẫn nếu bạn đặt khác thư mục
-import { getAvatarUrl, getImageUrl } from "../utils/imageUrl";
+import { getImageUrl } from "../utils/imageUrl";
 import { getWishlist, saveWishlist } from "../utils/wishlist";
 
 // MẢNG MENU ĐIỀU HƯỚNG
@@ -77,7 +77,31 @@ const Header = () => {
     return currentFullPath === linkPath;
   };
 
-  const formatAvatarUrl = (avatarPath) => getAvatarUrl(avatarPath, "");
+  // Chuẩn hóa URL avatar -> luôn ra dạng {origin backend}/uploads/<tên file>
+  // Xử lý được mọi dạng lưu trong DB/localStorage:
+  //   "xxx.png", "/uploads/xxx.png", "/api/images/xxx.png",
+  //   và cả URL bị lặp "/api/images//api/images/xxx.png"
+  const formatAvatarUrl = (avatarPath) => {
+    if (!avatarPath || typeof avatarPath !== "string") return "";
+
+    const p = avatarPath.trim();
+    if (/^(data|blob):/i.test(p)) return p;
+
+    // Ảnh từ bên ngoài (Google, Facebook...) thì giữ nguyên
+    if (/^https?:\/\//i.test(p) && !/\/(api\/images|uploads)\//i.test(p)) {
+      return p;
+    }
+
+    // Chỉ lấy tên file cuối cùng, bỏ hết mọi prefix (kể cả bị lặp)
+    const clean = p.split("?")[0].split("#")[0];
+    const filename = clean.substring(clean.lastIndexOf("/") + 1);
+    if (!filename) return "";
+
+    const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
+    const origin = apiUrl.replace(/\/api\/?$/, "");
+
+    return `${origin}/uploads/${filename}`;
+  };
 
   const syncCartBadgeCount = async () => {
     try {

@@ -4,12 +4,39 @@ import axios from "axios";
 import { useTranslation } from "react-i18next";
 import { useAppSettings } from "../../hooks/useAppSettings";
 
+const API_BASE = "http://localhost:5000";
+
+// Chuẩn hóa URL avatar: dù backend trả về dạng nào
+// (abc.png, /api/images/abc.png, /uploads/abc.png, http://.../api/images/abc.png)
+// thì kết quả cuối cùng luôn là `${API_BASE}/uploads/abc.png`.
+const getAvatarUrl = (avatar) => {
+  if (!avatar) return null;
+
+  const value = String(avatar).replace(/\\/g, "/");
+
+  if (value.startsWith("data:")) return value;
+
+  // URL ngoài (vd: avatar Google) thì giữ nguyên
+  if (
+    /^https?:\/\//.test(value) &&
+    !value.includes("/api/images/") &&
+    !value.includes("/uploads/")
+  ) {
+    return value;
+  }
+
+  // còn lại: chỉ lấy tên file rồi ghép vào /uploads
+  const fileName = value.split("/").pop();
+  return `${API_BASE}/uploads/${fileName}`;
+};
+
 const Header = ({ userProfile: propUserProfile }) => {
   const { t } = useTranslation();
   const { theme } = useAppSettings();
 
   const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState(propUserProfile || null);
+  const [avatarError, setAvatarError] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -24,14 +51,11 @@ const Header = ({ userProfile: propUserProfile }) => {
 
         if (!token) return;
 
-        const response = await axios.get(
-          "http://localhost:5000/api/users/profile",
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+        const response = await axios.get(`${API_BASE}/api/users/profile`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
           },
-        );
+        });
 
         setUser(response.data?.data || response.data);
       } catch (error) {
@@ -42,12 +66,14 @@ const Header = ({ userProfile: propUserProfile }) => {
     fetchProfile();
   }, [propUserProfile]);
 
+  // Reset trạng thái lỗi ảnh khi avatar của user thay đổi
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user?.avatar, user?.image]);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowProfile(false);
       }
     };
@@ -58,13 +84,6 @@ const Header = ({ userProfile: propUserProfile }) => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
-
-  const getAvatarUrl = (avatar) => {
-    if (!avatar) return null;
-    if (avatar.startsWith("http")) return avatar;
-
-    return `http://localhost:5000/uploads/${avatar}`;
-  };
 
   const formatRole = (rawRole) => {
     const roleValue = String(rawRole ?? "")
@@ -86,19 +105,14 @@ const Header = ({ userProfile: propUserProfile }) => {
     return rawRole || t("common.notAvailable");
   };
 
-  const name =
-    user?.name ||
-    user?.fullname ||
-    user?.username ||
-    "Thanh Nha";
+  const name = user?.name || user?.fullname || user?.username || "Thanh Nha";
 
-  const roleText = formatRole(
-    user?.role_id ?? user?.role ?? user?.role_name,
-  );
+  const roleText = formatRole(user?.role_id ?? user?.role ?? user?.role_name);
 
   const email = user?.email || "user1@gmail.com";
   const phone = user?.phone || user?.phone_number || "901000001";
   const avatarUrl = getAvatarUrl(user?.avatar || user?.image);
+  const showAvatar = Boolean(avatarUrl) && !avatarError;
   const isDark = theme === "dark";
 
   return (
@@ -126,10 +140,11 @@ const Header = ({ userProfile: propUserProfile }) => {
           }`}
         >
           <div className="relative shrink-0">
-            {avatarUrl ? (
+            {showAvatar ? (
               <img
                 src={avatarUrl}
                 alt={name}
+                onError={() => setAvatarError(true)}
                 className="w-10 h-10 rounded-xl object-cover border border-amber-500/50"
               />
             ) : (
@@ -163,10 +178,11 @@ const Header = ({ userProfile: propUserProfile }) => {
               }`}
             >
               <div className="flex items-center gap-3">
-                {avatarUrl ? (
+                {showAvatar ? (
                   <img
                     src={avatarUrl}
                     alt={name}
+                    onError={() => setAvatarError(true)}
                     className="w-12 h-12 rounded-xl object-cover border-2 border-amber-500/80"
                   />
                 ) : (
@@ -209,9 +225,7 @@ const Header = ({ userProfile: propUserProfile }) => {
                     {t("header.email")}
                   </p>
 
-                  <p className="text-xs font-bold truncate mt-0.5">
-                    {email}
-                  </p>
+                  <p className="text-xs font-bold truncate mt-0.5">{email}</p>
                 </div>
               </div>
 
@@ -229,9 +243,7 @@ const Header = ({ userProfile: propUserProfile }) => {
                     {t("header.role")}
                   </p>
 
-                  <p className="text-xs font-bold mt-0.5">
-                    {roleText}
-                  </p>
+                  <p className="text-xs font-bold mt-0.5">{roleText}</p>
                 </div>
               </div>
 

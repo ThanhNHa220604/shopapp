@@ -43,17 +43,40 @@ export const getImageUrl = (imageName, fallback) => {
 };
 
 /**
- * Chuẩn hóa URL avatar người dùng — dùng route RIÊNG "/api/images/:filename"
- * (khác với /uploads/ của ảnh sản phẩm/banner), khớp với imageService trong
- * services/media.js. Vẫn dùng chung nguồn cấu hình REACT_APP_API_URL.
+ * Chuẩn hóa URL avatar người dùng.
+ * Hỗ trợ mọi dạng dữ liệu có thể nằm trong DB/localStorage:
+ *  - "xxx.png"                 (chỉ tên file)
+ *  - "/uploads/xxx.png"        (đã có prefix uploads)
+ *  - "/api/images/xxx.png"     (prefix cũ của route avatar)
+ *  - "http(s)://..."           (URL tuyệt đối, giữ nguyên)
+ *
+ * Luôn trả về: {BACKEND_ORIGIN}/uploads/xxx.png
  *
  * @param {string} avatarPath - giá trị trường "avatar" từ API/localStorage
  * @param {string} fallback - URL ảnh mặc định khi không có/lỗi ảnh
  */
 export const getAvatarUrl = (avatarPath, fallback = "") => {
-  if (!avatarPath) return fallback;
-  if (avatarPath.startsWith("http://") || avatarPath.startsWith("https://")) {
-    return avatarPath;
+  if (!avatarPath || typeof avatarPath !== "string") return fallback;
+
+  const path = avatarPath.trim();
+
+  if (
+    path.startsWith("http://") ||
+    path.startsWith("https://") ||
+    path.startsWith("data:") ||
+    path.startsWith("blob:")
+  ) {
+    return path;
   }
-  return `${API_URL}/images/${avatarPath}`;
+
+  // Bỏ "/" đầu và mọi prefix cũ (kể cả bị lặp), chỉ giữ lại tên file
+  let filename = path.replace(/^\/+/, "");
+  const prefixRegex = /^(api\/images|api\/uploads|images|uploads)\/+/i;
+  while (prefixRegex.test(filename)) {
+    filename = filename.replace(prefixRegex, "");
+  }
+
+  if (!filename) return fallback;
+
+  return `${BACKEND_ORIGIN}/uploads/${filename}`;
 };

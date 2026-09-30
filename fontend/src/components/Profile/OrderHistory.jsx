@@ -14,6 +14,34 @@ import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import ProductFeedback from "../feedback";
 
+// Địa chỉ giao hàng có thể được lưu/trả về ở nhiều dạng khác nhau:
+// - object { street, ward, district, city, fullAddress }
+// - chuỗi JSON của object trên (do backend JSON.stringify trước khi lưu)
+// - chuỗi địa chỉ thường (đơn hàng cũ trước khi đổi cấu trúc)
+// Hàm này chuẩn hóa về một chuỗi hiển thị được.
+const formatAddress = (address) => {
+  if (!address) return "";
+
+  if (typeof address === "object") {
+    return address.fullAddress || address.street || "";
+  }
+
+  if (typeof address === "string") {
+    try {
+      const parsed = JSON.parse(address);
+      if (parsed && typeof parsed === "object") {
+        return parsed.fullAddress || parsed.street || address;
+      }
+      return address;
+    } catch {
+      // Không phải JSON hợp lệ -> coi như địa chỉ dạng chuỗi thường
+      return address;
+    }
+  }
+
+  return "";
+};
+
 const OrderHistory = ({ orders, setOrders, user }) => {
   const navigate = useNavigate();
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -627,7 +655,7 @@ const OrderHistory = ({ orders, setOrders, user }) => {
                           <div className="flex justify-between text-sm">
                             <span className="text-slate-400">Địa chỉ</span>
                             <span className="font-medium text-slate-800 text-right max-w-[60%]">
-                              {orderDetail.address}
+                              {formatAddress(orderDetail.address)}
                             </span>
                           </div>
                         )}

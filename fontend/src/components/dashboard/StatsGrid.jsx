@@ -9,7 +9,6 @@ import {
   Minus,
 } from "lucide-react";
 import {
-  parseRevenueDate,
   isDeliveredOrder,
   getOrderAmount,
 } from "../../utils/orderUtils";
@@ -17,40 +16,27 @@ import {
 const StatsGrid = ({
   stats = {},
   orders = [],
+  // Nhãn mô tả khoảng thời gian đang lọc (ví dụ "tháng 9", "năm 2026",
+  // "7 ngày gần nhất"). AdminDashboard truyền xuống theo bộ lọc Tuần/Tháng/Năm.
+  periodLabel = "tháng này",
   loadingStats,
   formatRevenue,
 }) => {
-  // Tính toán Doanh thu tháng này trực tiếp từ danh sách orders
+  // `orders` đã được AdminDashboard lọc sẵn theo kỳ (Tuần/Tháng/Năm),
+  // ở đây chỉ cần cộng doanh thu của các đơn đã hoàn thành trong đó.
   const displayRevenue = useMemo(() => {
     if (!Array.isArray(orders) || orders.length === 0) return 0;
 
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
     return orders
-      .filter((order) => {
-        // 1. Kiểm tra trạng thái đã giao/hoàn thành
-        if (!isDeliveredOrder(order)) return false;
-
-        // 2. Lấy mốc ngày hợp lệ từ order
-        const rawDate = parseRevenueDate(order);
-        if (!rawDate) return false;
-
-        const revenueDate = new Date(rawDate);
-        if (isNaN(revenueDate.getTime())) return false; // Tránh Invalid Date
-
-        // 3. Khớp Tháng và Năm hiện tại
-        return (
-          revenueDate.getMonth() === currentMonth &&
-          revenueDate.getFullYear() === currentYear
-        );
-      })
+      .filter((order) => isDeliveredOrder(order))
       .reduce((total, order) => {
         const amount = Number(getOrderAmount(order)) || 0;
         return total + amount;
       }, 0);
   }, [orders]);
+
+  // Số đơn phát sinh trong kỳ đang lọc
+  const periodOrdersCount = Array.isArray(orders) ? orders.length : 0;
 
   const renderGrowthBadge = (value, isPercentage = true) => {
     const numericValue = Number(value) || 0;
@@ -95,7 +81,7 @@ const StatsGrid = ({
                 : displayRevenue.toLocaleString("vi-VN")}
           </h3>
           <p className="text-xs text-slate-400 font-semibold mt-0.5">
-            Doanh thu tháng này
+            Doanh thu {periodLabel}
           </p>
           <p className="text-[10px] text-slate-500 mt-1">
             Chỉ tính các đơn đã hoàn thành (DELIVERED)
@@ -115,10 +101,10 @@ const StatsGrid = ({
           <h3 className="text-2xl font-black text-white">
             {loadingStats
               ? "..."
-              : `+${(stats.newOrders || 0).toLocaleString("vi-VN")}`}
+              : periodOrdersCount.toLocaleString("vi-VN")}
           </h3>
           <p className="text-xs text-slate-400 font-semibold mt-0.5">
-            Đơn hàng sản phẩm mới
+            Đơn hàng {periodLabel}
           </p>
           <p className="text-[10px] text-slate-500 mt-1">
             Tăng trưởng {stats.orderGrowth || 0}% so với tháng trước

@@ -38,19 +38,35 @@ const orderService = {
   },
 
   // =========================================================================
-  // CHUẨN HÓA: THANH TOÁN (CHECKOUT CART & MUA NGAY)
-  // =========================================================================
-  // Nhận nguyên vẹn object `data` từ Component (không gán giá trị mặc định):
+  // THANH TOÁN (CHECKOUT CART & MUA NGAY)
+  // Tổng tiền do SERVER tự tính, không gửi `total` lên.
   //
-  // 1. Nếu Mua từ Giỏ hàng:
-  // { cart_id, total, payment_method, phone, address, note }
+  // 1. Mua từ giỏ hàng:
+  //    { cart_id, payment_method, phone, address, note, user_id, voucher_code }
   //
-  // 2. Nếu Mua ngay (Trực tiếp sản phẩm):
-  // { product_id, variant_id, quantity, total, payment_method, phone, address, note }
+  // 2. Mua ngay (trực tiếp sản phẩm):
+  //    { product_id, variant_id, quantity, payment_method, phone, address, note,
+  //      user_id, voucher_code }
+  //
+  // payment_method: "cod" | "momo" | "bank"
+  //
+  // Backend trả về dạng { message, data: {...} }, trong đó:
+  //  - MoMo: data.paymentUrl        -> chuyển hướng sang trang MoMo
+  //  - Bank: data.qrImageUrl, ...   -> hiện QR chuyển khoản
+  //  - COD : data.order_id          -> báo đặt hàng thành công
   // =========================================================================
   checkoutCart: async (data) => {
     const response = await api.post("/carts/checkout", data);
     return response.data;
+  },
+
+  // Hỏi server xem giao dịch MoMo đã thanh toán chưa (server sẽ query MoMo)
+  // momoOrderId dạng "DH17_1730000000000" lấy từ query string MoMo redirect về
+  verifyMomo: async (momoOrderId) => {
+    const response = await api.get("/momo/verify", {
+      params: { orderId: momoOrderId },
+    });
+    return response.data; // { status, is_paid }
   },
 
   // Lấy tất cả danh sách Đơn hàng (Orders)

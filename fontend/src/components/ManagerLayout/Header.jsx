@@ -44,10 +44,7 @@ const Header = ({ userProfile: propUserProfile }) => {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowProfile(false);
       }
     };
@@ -59,11 +56,26 @@ const Header = ({ userProfile: propUserProfile }) => {
     };
   }, []);
 
+  // Chuẩn hóa URL avatar -> luôn ra dạng http://localhost:5000/uploads/<tên file>
+  // Xử lý được mọi dạng: "xxx.png", "/uploads/xxx.png", "/api/images/xxx.png",
+  // và cả URL bị lặp "/api/images//api/images/xxx.png"
   const getAvatarUrl = (avatar) => {
-    if (!avatar) return null;
-    if (avatar.startsWith("http")) return avatar;
+    if (!avatar || typeof avatar !== "string") return null;
 
-    return `http://localhost:5000/uploads/${avatar}`;
+    const p = avatar.trim();
+    if (/^(data|blob):/i.test(p)) return p;
+
+    // Ảnh từ bên ngoài (Google, Facebook...) thì giữ nguyên
+    if (/^https?:\/\//i.test(p) && !/\/(api\/images|uploads)\//i.test(p)) {
+      return p;
+    }
+
+    // Chỉ lấy tên file cuối cùng, bỏ hết mọi prefix (kể cả bị lặp)
+    const clean = p.split("?")[0].split("#")[0];
+    const filename = clean.substring(clean.lastIndexOf("/") + 1);
+    if (!filename) return null;
+
+    return `http://localhost:5000/uploads/${filename}`;
   };
 
   const formatRole = (rawRole) => {
@@ -86,15 +98,9 @@ const Header = ({ userProfile: propUserProfile }) => {
     return rawRole || t("common.notAvailable");
   };
 
-  const name =
-    user?.name ||
-    user?.fullname ||
-    user?.username ||
-    "Thanh Nha";
+  const name = user?.name || user?.fullname || user?.username || "Thanh Nha";
 
-  const roleText = formatRole(
-    user?.role_id ?? user?.role ?? user?.role_name,
-  );
+  const roleText = formatRole(user?.role_id ?? user?.role ?? user?.role_name);
 
   const email = user?.email || "user1@gmail.com";
   const phone = user?.phone || user?.phone_number || "901000001";
@@ -209,9 +215,7 @@ const Header = ({ userProfile: propUserProfile }) => {
                     {t("header.email")}
                   </p>
 
-                  <p className="text-xs font-bold truncate mt-0.5">
-                    {email}
-                  </p>
+                  <p className="text-xs font-bold truncate mt-0.5">{email}</p>
                 </div>
               </div>
 
@@ -229,9 +233,7 @@ const Header = ({ userProfile: propUserProfile }) => {
                     {t("header.role")}
                   </p>
 
-                  <p className="text-xs font-bold mt-0.5">
-                    {roleText}
-                  </p>
+                  <p className="text-xs font-bold mt-0.5">{roleText}</p>
                 </div>
               </div>
 

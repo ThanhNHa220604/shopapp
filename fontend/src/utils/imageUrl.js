@@ -55,5 +55,12 @@ export const getAvatarUrl = (avatarPath, fallback = "") => {
   if (avatarPath.startsWith("http://") || avatarPath.startsWith("https://")) {
     return avatarPath;
   }
-  return `${API_URL}/images/${avatarPath}`;
+
+  // Backend đôi khi lưu/trả về avatar đã kèm sẵn đường dẫn đầy đủ, ví dụ
+  // "/api/images/xxx.png" hoặc "images/xxx.png", thay vì chỉ tên file
+  // "xxx.png". Bỏ hết các tiền tố đó đi trước khi tự thêm lại route
+  // "/api/images/", để không bị nhân đôi thành "/api/images//api/images/...".
+  const clean = avatarPath.replace(/^\/?(api\/)?images\//i, "");
+
+  return `${API_URL}/images/${clean}`;
 };

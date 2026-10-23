@@ -373,9 +373,22 @@ const OrderTable = () => {
       item.Product?.image ||
       item.image;
 
-    if (!rawImage) return null;
-    if (rawImage.startsWith("http")) return rawImage;
-    return `http://localhost:5000/api/images/${rawImage.replace(/^\/+/, "")}`;
+    if (!rawImage || typeof rawImage !== "string") return null;
+
+    const p = rawImage.trim();
+    if (/^(data|blob):/i.test(p)) return p;
+
+    // Ảnh từ bên ngoài (URL tuyệt đối không dính /api/images hay /uploads) thì giữ nguyên
+    if (/^https?:\/\//i.test(p) && !/\/(api\/images|uploads)\//i.test(p)) {
+      return p;
+    }
+
+    // Chỉ lấy tên file cuối cùng, bỏ hết mọi prefix (kể cả bị lặp)
+    const clean = p.split("?")[0].split("#")[0];
+    const filename = clean.substring(clean.lastIndexOf("/") + 1);
+    if (!filename) return null;
+
+    return `http://localhost:5000/uploads/${filename}`;
   };
 
   const fetchData = async (page = 1, status = "ALL") => {

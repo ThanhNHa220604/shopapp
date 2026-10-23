@@ -31,10 +31,7 @@ const Sidebar = () => {
     window.addEventListener("chat-unread-updated", handleUnreadUpdate);
 
     return () => {
-      window.removeEventListener(
-        "chat-unread-updated",
-        handleUnreadUpdate,
-      );
+      window.removeEventListener("chat-unread-updated", handleUnreadUpdate);
     };
   }, []);
 
@@ -58,12 +55,8 @@ const Sidebar = () => {
     : "w-full py-3.5 px-5 bg-slate-200/60 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-extrabold text-sm rounded-2xl flex items-center justify-start gap-3 transition-all duration-200 active:scale-[0.98]";
 
   const isAddProductActive = location.pathname === "/manager/products/add";
-  const isVoucherActive = location.pathname.startsWith(
-    "/manager/vouchers",
-  );
-  const isSettingActive = location.pathname.startsWith(
-    "/manager/settings",
-  );
+  const isVoucherActive = location.pathname.startsWith("/manager/vouchers");
+  const isSettingActive = location.pathname.startsWith("/manager/settings");
 
   return (
     <aside

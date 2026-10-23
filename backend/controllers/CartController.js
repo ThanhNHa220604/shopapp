@@ -1,10 +1,80 @@
 const Sequelize = require("sequelize");
+
+const crypto = require("crypto");
 const db = require("../models");
-const { createMomoPayment } = require("../helpers/momoHelper");
+
 const { buildAddressString } = require("./OrderController");
 
-const OrderStatus = require("../constants");
+const { OrderStatus } = require("../constants");
 const Op = Sequelize.Op;
+const QR_EXPIRE_MINUTES = 15;
+
+class CheckoutError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+
+
+// Tạo chữ ký HMAC-SHA256 cho MoMo (dùng cho cả tạo giao dịch lẫn kiểm tra IPN)
+const momoSign = (raw) =>
+  crypto
+    .createHmac("sha256", process.env.MOMO_SECRET_KEY)
+    .update(raw)
+    .digest("hex");
+
+async function createMomoPayment(dbOrderId, amount, orderInfo) {
+  const {
+    MOMO_PARTNER_CODE: partnerCode,
+    MOMO_ACCESS_KEY: accessKey,
+    MOMO_ENDPOINT,
+    MOMO_REDIRECT_URL: redirectUrl,
+    MOMO_IPN_URL: ipnUrl,
+  } = process.env;
+
+  // orderId gửi MoMo không được trùng giữa các lần tạo -> thêm timestamp.
+  // IPN sẽ tách lại: "DH17_1730000000000" -> 17
+  const orderId = `DH${dbOrderId}_${Date.now()}`;
+  const requestId = orderId;
+  const requestType = "captureWallet";
+  const extraData = "";
+
+  // Các trường phải xếp theo thứ tự alphabet
+  const rawSignature =
+    `accessKey=${accessKey}&amount=${amount}&extraData=${extraData}` +
+    `&ipnUrl=${ipnUrl}&orderId=${orderId}&orderInfo=${orderInfo}` +
+    `&partnerCode=${partnerCode}&redirectUrl=${redirectUrl}` +
+    `&requestId=${requestId}&requestType=${requestType}`;
+
+  const resp = await fetch(MOMO_ENDPOINT, {
+    // fetch có sẵn từ Node 18; nếu bạn dùng axios thì đổi tương ứng
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      partnerCode,
+      accessKey,
+      requestId,
+      amount,
+      orderId,
+      orderInfo,
+      redirectUrl,
+      ipnUrl,
+      extraData,
+      requestType,
+      signature: momoSign(rawSignature),
+      lang: "vi",
+    }),
+  });
+  const data = await resp.json();
+
+  if (data.resultCode !== 0) {
+    console.error("MoMo create lỗi:", data);
+    throw new Error(data.message || "MoMo từ chối giao dịch");
+  }
+  return data; // chứa payUrl
+}
 
 // =============================================================================
 // 1. LẤY DANH SÁCH TẤT CẢ GIỎ HÀNG (Phân trang)
@@ -243,10 +313,9 @@ async function checkoutCart(req, res) {
     quanity,
     quantity,
     items,
-    total,
+    // total: KHÔNG dùng total từ client nữa, server tự tính
     note,
     phone,
-    address,
     user_id,
     session_id,
     payment_method,
@@ -254,12 +323,11 @@ async function checkoutCart(req, res) {
     voucher_code,
   } = req.body;
 
-  console.log("👉 [CHECKOUT PAYLOAD]:", req.body);
-
   const transaction = await db.sequelize.transaction();
 
   try {
-    let orderDetails = [];
+    const now = new Date();
+    const orderDetails = [];
     let calculatedTotal = 0;
 
     const targetProductId = product_id ? Number(product_id) : null;
@@ -267,7 +335,6 @@ async function checkoutCart(req, res) {
     const chosenVariantId = product_variant_value_id || variant_id || null;
     const isBuyNow = !!targetProductId;
     const isDirectItems = Array.isArray(items) && items.length > 0;
-    const now = new Date();
 
     const VariantModel =
       db.product_variant_values ||
@@ -275,10 +342,24 @@ async function checkoutCart(req, res) {
       db.productVariantValues;
     const FlashSaleProductModel =
       db.flash_sale_products || db.FlashSaleProducts;
+    const VoucherModel = db.vouchers || db.Voucher;
+    const VoucherUsageModel =
+      db.voucher_usages || db.voucherusages || db.VoucherUsages;
 
+    // Chuẩn hóa phương thức thanh toán
+    const method =
+      payment_method === "momo"
+        ? "momo"
+        : payment_method === "bank" || payment_method === "vnpay"
+          ? "bank"
+          : "cod";
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
     const getActiveFlashSale = async (pId) => {
       if (!FlashSaleProductModel) return null;
-      return await FlashSaleProductModel.findOne({
+      return FlashSaleProductModel.findOne({
         where: { product_id: pId },
         include: [
           {
@@ -295,89 +376,33 @@ async function checkoutCart(req, res) {
       });
     };
 
-    // -------------------------------------------------------------------------
-    // LUỒNG 1: MUA NGAY TRỰC TIẾP (1 SẢN PHẨM)
-    // -------------------------------------------------------------------------
-    if (isBuyNow) {
-      let itemPrice = 0;
-      const flashSaleItem = await getActiveFlashSale(targetProductId);
+    // Trừ kho nguyên tử + trừ flash sale, trả về GIÁ DO SERVER quyết định
+    // (flash sale > giá biến thể > giá sản phẩm)
+    const reserveItem = async ({ product, variant, qty }) => {
+      const flashSaleItem = await getActiveFlashSale(product.id);
 
-      const product = await db.products.findOne({
-        where: { id: targetProductId },
-        attributes: ["id", "name", "price", "quanity"],
-        transaction,
-      });
-
-      if (!product) {
-        await transaction.rollback();
-        return res
-          .status(404)
-          .json({ message: `Sản phẩm ID ${targetProductId} không tồn tại` });
+      const [productOk] = await db.products.update(
+        { quanity: db.sequelize.literal(`quanity - ${qty}`) },
+        { where: { id: product.id, quanity: { [Op.gte]: qty } }, transaction },
+      );
+      if (productOk === 0) {
+        throw new CheckoutError(
+          400,
+          `Sản phẩm ${product.name} không đủ số lượng trong kho`,
+        );
       }
 
-      if (product.quanity < inputQuantity) {
-        await transaction.rollback();
-        return res.status(400).json({
-          message: `Sản phẩm ${product.name} không đủ tổng số lượng trong kho`,
-        });
-      }
-
-      if (chosenVariantId && VariantModel) {
-        const variant = await VariantModel.findOne({
-          where: { id: chosenVariantId, product_id: targetProductId },
-          transaction,
-        });
-
-        if (!variant) {
-          await transaction.rollback();
-          return res
-            .status(404)
-            .json({ message: "Biến thể sản phẩm không tồn tại" });
+      if (variant && VariantModel) {
+        const [variantOk] = await VariantModel.update(
+          { stock: db.sequelize.literal(`stock - ${qty}`) },
+          { where: { id: variant.id, stock: { [Op.gte]: qty } }, transaction },
+        );
+        if (variantOk === 0) {
+          throw new CheckoutError(
+            400,
+            `Biến thể của ${product.name} không đủ số lượng (còn ${variant.stock})`,
+          );
         }
-
-        if (variant.stock < inputQuantity) {
-          await transaction.rollback();
-          return res.status(400).json({
-            message: `Kho biến thể không đủ số lượng (Còn lại: ${variant.stock})`,
-          });
-        }
-
-        itemPrice = flashSaleItem
-          ? parseFloat(flashSaleItem.flash_sale_price)
-          : parseFloat(variant.price);
-
-        orderDetails.push({
-          product_id: targetProductId,
-          product_variant_value_id: variant.id,
-          quantity: inputQuantity,
-          price: itemPrice,
-        });
-
-        await VariantModel.update(
-          { stock: variant.stock - inputQuantity },
-          { where: { id: variant.id }, transaction },
-        );
-
-        await db.products.update(
-          { quanity: product.quanity - inputQuantity },
-          { where: { id: product.id }, transaction },
-        );
-      } else {
-        itemPrice = flashSaleItem
-          ? parseFloat(flashSaleItem.flash_sale_price)
-          : parseFloat(product.price);
-
-        orderDetails.push({
-          product_id: product.id,
-          product_variant_value_id: null,
-          quantity: inputQuantity,
-          price: itemPrice,
-        });
-
-        await db.products.update(
-          { quanity: product.quanity - inputQuantity },
-          { where: { id: product.id }, transaction },
-        );
       }
 
       if (flashSaleItem) {
@@ -385,99 +410,91 @@ async function checkoutCart(req, res) {
           {
             flash_sale_stock: Math.max(
               0,
-              flashSaleItem.flash_sale_stock - inputQuantity,
+              (flashSaleItem.flash_sale_stock || 0) - qty,
             ),
-            flash_sale_sold:
-              (flashSaleItem.flash_sale_sold || 0) + inputQuantity,
+            flash_sale_sold: (flashSaleItem.flash_sale_sold || 0) + qty,
           },
           { where: { id: flashSaleItem.id }, transaction },
         );
       }
 
-      calculatedTotal = inputQuantity * itemPrice;
+      if (flashSaleItem) return parseFloat(flashSaleItem.flash_sale_price);
+      if (variant) return parseFloat(variant.price);
+      return parseFloat(product.price || 0);
+    };
+
+    const loadProduct = async (pId) => {
+      const product = await db.products.findOne({
+        where: { id: pId },
+        attributes: ["id", "name", "price", "quanity"],
+        transaction,
+      });
+      if (!product) {
+        throw new CheckoutError(404, `Sản phẩm ID ${pId} không tồn tại`);
+      }
+      return product;
+    };
+
+    const loadVariant = async (vId, pId) => {
+      if (!vId || !VariantModel) return null;
+      const variant = await VariantModel.findOne({
+        where: { id: vId, product_id: pId },
+        transaction,
+      });
+      if (!variant) {
+        throw new CheckoutError(404, "Biến thể sản phẩm không tồn tại");
+      }
+      return variant;
+    };
+
+    // ---------------------------------------------------------------------
+    // LUỒNG 1: MUA NGAY (1 SẢN PHẨM)
+    // ---------------------------------------------------------------------
+    if (isBuyNow) {
+      const product = await loadProduct(targetProductId);
+      const variant = await loadVariant(chosenVariantId, targetProductId);
+      const price = await reserveItem({ product, variant, qty: inputQuantity });
+
+      orderDetails.push({
+        product_id: product.id,
+        product_variant_value_id: variant ? variant.id : null,
+        quantity: inputQuantity,
+        price,
+      });
+      calculatedTotal = inputQuantity * price;
     }
-    // -------------------------------------------------------------------------
-    // LUỒNG 2: MUA QUA MẢNG ITEMS TRỰC TIẾP
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // LUỒNG 2: MUA QUA MẢNG ITEMS (giá lấy từ DB, không tin item.price)
+    // ---------------------------------------------------------------------
     else if (isDirectItems) {
       for (const item of items) {
         const pId = Number(item.product_id || item.products?.id || item.id);
-        const itemQty = parseInt(item.quantity || item.quanity) || 1;
-        const vId =
-          item.product_variant_value_id || item.variant_id
-            ? Number(item.product_variant_value_id || item.variant_id)
-            : null;
-
         if (!pId) continue;
 
-        let itemPrice = parseFloat(item.price || 0);
+        const qty = parseInt(item.quantity || item.quanity) || 1;
+        const vIdRaw = item.product_variant_value_id || item.variant_id;
+        const vId = vIdRaw ? Number(vIdRaw) : null;
 
-        const product = await db.products.findOne({
-          where: { id: pId },
-          attributes: ["id", "name", "price", "quanity"],
-          transaction,
-        });
+        const product = await loadProduct(pId);
+        const variant = await loadVariant(vId, pId);
+        const price = await reserveItem({ product, variant, qty });
 
-        if (!product) {
-          await transaction.rollback();
-          return res
-            .status(404)
-            .json({ message: `Sản phẩm ID ${pId} không tồn tại` });
-        }
-
-        if (product.quanity < itemQty) {
-          await transaction.rollback();
-          return res.status(400).json({
-            message: `Sản phẩm ${product.name} không đủ số lượng trong kho`,
-          });
-        }
-
-        if (vId && VariantModel) {
-          const variant = await VariantModel.findOne({
-            where: { id: vId, product_id: pId },
-            transaction,
-          });
-          if (variant) {
-            if (variant.stock < itemQty) {
-              await transaction.rollback();
-              return res.status(400).json({
-                message: `Kho biến thể không đủ số lượng cho sản phẩm ID ${pId}`,
-              });
-            }
-            if (!itemPrice) itemPrice = parseFloat(variant.price);
-
-            await VariantModel.update(
-              { stock: variant.stock - itemQty },
-              { where: { id: variant.id }, transaction },
-            );
-
-            await db.products.update(
-              { quanity: product.quanity - itemQty },
-              { where: { id: product.id }, transaction },
-            );
-          }
-        } else {
-          if (!itemPrice) itemPrice = parseFloat(product.price);
-
-          await db.products.update(
-            { quanity: product.quanity - itemQty },
-            { where: { id: product.id }, transaction },
-          );
-        }
-
-        calculatedTotal += itemQty * itemPrice;
-
+        calculatedTotal += qty * price;
         orderDetails.push({
           product_id: pId,
-          product_variant_value_id: vId,
-          quantity: itemQty,
-          price: itemPrice,
+          product_variant_value_id: variant ? variant.id : null,
+          quantity: qty,
+          price,
         });
       }
+
+      if (orderDetails.length === 0) {
+        throw new CheckoutError(400, "Không có sản phẩm hợp lệ để thanh toán");
+      }
     }
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------
     // LUỒNG 3: THANH TOÁN QUA GIỎ HÀNG
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------
     else {
       let cartId = cart_id ? Number(cart_id) : null;
       const validUserId = user_id ? Number(user_id) : null;
@@ -491,10 +508,10 @@ async function checkoutCart(req, res) {
       }
 
       if (!cartId) {
-        await transaction.rollback();
-        return res
-          .status(400)
-          .json({ message: "Thiếu thông tin cart_id hoặc user_id hợp lệ" });
+        throw new CheckoutError(
+          400,
+          "Thiếu thông tin cart_id hoặc user_id hợp lệ",
+        );
       }
 
       const cart = await db.carts.findByPk(cartId, {
@@ -515,91 +532,39 @@ async function checkoutCart(req, res) {
       });
 
       if (!cart || !cart.cart_items || cart.cart_items.length === 0) {
-        await transaction.rollback();
-        return res
-          .status(400)
-          .json({ message: "Giỏ hàng không hợp lệ hoặc đang trống" });
+        throw new CheckoutError(400, "Giỏ hàng không hợp lệ hoặc đang trống");
       }
 
       for (const item of cart.cart_items) {
         const product = item.products;
-        const variant = item.product_variant_values;
-        const buyQty = Number(item.quanity || item.quantity || 1);
+        const variant = item.product_variant_values || null;
+        const qty = Number(item.quanity || item.quantity || 1);
 
         if (!product) {
-          await transaction.rollback();
-          return res.status(404).json({
-            message: `Sản phẩm ID ${item.product_id} trong giỏ không tồn tại`,
-          });
+          throw new CheckoutError(
+            404,
+            `Sản phẩm ID ${item.product_id} trong giỏ không tồn tại`,
+          );
         }
 
-        if (product.quanity < buyQty) {
-          await transaction.rollback();
-          return res
-            .status(400)
-            .json({ message: `Sản phẩm ${product.name} không đủ kho tổng` });
-        }
+        const price = await reserveItem({ product, variant, qty });
 
-        if (variant && variant.stock < buyQty) {
-          await transaction.rollback();
-          return res.status(400).json({
-            message: `Biến thể sản phẩm ${product.name} không đủ kho`,
-          });
-        }
-
-        const flashSaleItem = await getActiveFlashSale(item.product_id);
-        let itemPrice = 0;
-
-        if (flashSaleItem) {
-          itemPrice = parseFloat(flashSaleItem.flash_sale_price);
-        } else if (variant) {
-          itemPrice = parseFloat(variant.price);
-        } else {
-          itemPrice = parseFloat(product.price || 0);
-        }
-
-        calculatedTotal += buyQty * itemPrice;
-
+        calculatedTotal += qty * price;
         orderDetails.push({
           product_id: item.product_id,
           product_variant_value_id:
             item.product_variant_value_id || (variant ? variant.id : null),
-          quantity: buyQty,
-          price: itemPrice,
+          quantity: qty,
+          price,
         });
-
-        await db.products.update(
-          { quanity: product.quanity - buyQty },
-          { where: { id: item.product_id }, transaction },
-        );
-
-        if (variant && VariantModel) {
-          await VariantModel.update(
-            { stock: variant.stock - buyQty },
-            { where: { id: variant.id }, transaction },
-          );
-        }
-
-        if (flashSaleItem) {
-          await FlashSaleProductModel.update(
-            {
-              flash_sale_stock: Math.max(
-                0,
-                flashSaleItem.flash_sale_stock - buyQty,
-              ),
-              flash_sale_sold: (flashSaleItem.flash_sale_sold || 0) + buyQty,
-            },
-            { where: { id: flashSaleItem.id }, transaction },
-          );
-        }
       }
 
       await db.cart_items.destroy({ where: { cart_id: cartId }, transaction });
     }
 
-    // =========================================================================
-    // BƯỚC 1: TÍNH TIỀN VOUCHER GIẢM GIÁ (CHƯA LƯU VÀO DATABASE VÌ CHƯA CÓ ORDER_ID)
-    // =========================================================================
+    // =====================================================================
+    // BƯỚC 1: TÍNH VOUCHER
+    // =====================================================================
     let discountAmount = 0;
     let appliedVoucher = null;
     const targetVoucherId = voucher_id || null;
@@ -608,10 +573,6 @@ async function checkoutCart(req, res) {
       : null;
 
     if (targetVoucherId || targetVoucherCode) {
-      const VoucherModel = db.vouchers || db.Voucher;
-      const VoucherUsageModel =
-        db.voucher_usages || db.voucherusages || db.VoucherUsages;
-
       const whereCond = targetVoucherId
         ? { id: targetVoucherId }
         : { code: targetVoucherCode };
@@ -624,18 +585,15 @@ async function checkoutCart(req, res) {
       if (voucher) {
         const checkoutUserId = user_id ? Number(user_id) : null;
 
-        // 🟢 1. Kiểm tra còn trong thời hạn hiệu lực không
         const isWithinDateRange =
           (!voucher.start_date || new Date(voucher.start_date) <= now) &&
           (!voucher.end_date || new Date(voucher.end_date) >= now);
 
-        // 🟢 2. Kiểm tra còn lượt dùng chung (usage_limit = null nghĩa là không giới hạn)
         const passUsageLimit =
           voucher.usage_limit === null ||
           voucher.usage_limit === undefined ||
           Number(voucher.used_count || 0) < Number(voucher.usage_limit);
 
-        // 🟢 3. Kiểm tra số lần user này đã dùng voucher (limit_per_user)
         let userUsageCount = 0;
         if (checkoutUserId && VoucherUsageModel) {
           userUsageCount = await VoucherUsageModel.count({
@@ -644,17 +602,26 @@ async function checkoutCart(req, res) {
           });
         }
         const limitPerUser = Number(voucher.limit_per_user || 1);
-        // Khách chưa đăng nhập (checkoutUserId null) thì không chặn được theo user
-        // -> vẫn cho qua để không làm hỏng luồng khách vãng lai hiện có.
         const passLimitPerUser =
           !checkoutUserId || userUsageCount < limitPerUser;
 
-        if (
-          isWithinDateRange &&
-          passUsageLimit &&
-          passLimitPerUser &&
-          calculatedTotal >= parseFloat(voucher.min_order_value || 0)
-        ) {
+        if (!passLimitPerUser) {
+          throw new CheckoutError(
+            400,
+            "Bạn đã sử dụng hết số lần cho phép với mã giảm giá này",
+          );
+        }
+        if (!passUsageLimit) {
+          throw new CheckoutError(400, "Mã giảm giá đã hết lượt sử dụng");
+        }
+        if (!isWithinDateRange) {
+          throw new CheckoutError(
+            400,
+            "Mã giảm giá đã hết hạn hoặc chưa đến ngày áp dụng",
+          );
+        }
+
+        if (calculatedTotal >= parseFloat(voucher.min_order_value || 0)) {
           if (
             voucher.discount_type === "percentage" ||
             voucher.discount_type === "percent"
@@ -671,45 +638,31 @@ async function checkoutCart(req, res) {
             discountAmount = parseFloat(voucher.discount_value || 0);
           }
 
-          if (discountAmount > calculatedTotal) {
+          if (discountAmount > calculatedTotal)
             discountAmount = calculatedTotal;
-          }
-
           appliedVoucher = voucher;
-        } else if (!passLimitPerUser) {
-          await transaction.rollback();
-          return res.status(400).json({
-            message: "Bạn đã sử dụng hết số lần cho phép với mã giảm giá này",
-          });
-        } else if (!passUsageLimit) {
-          await transaction.rollback();
-          return res.status(400).json({
-            message: "Mã giảm giá đã hết lượt sử dụng",
-          });
-        } else if (!isWithinDateRange) {
-          await transaction.rollback();
-          return res.status(400).json({
-            message: "Mã giảm giá đã hết hạn hoặc chưa đến ngày áp dụng",
-          });
         }
       }
     }
 
-    const finalTotal =
-      total !== undefined && total !== null
-        ? Number(total)
-        : Math.max(0, calculatedTotal - discountAmount);
+    // Tổng tiền DO SERVER tính (nếu có phí ship thì cộng thêm ở đây)
+    const finalTotal = Math.round(
+      Math.max(0, calculatedTotal - discountAmount),
+    );
 
-    // =========================================================================
-    // BƯỚC 2: TẠO ĐƠN HÀNG TRƯỚC ĐỂ LẤY NEWORDER.ID
-    // =========================================================================
+    // =====================================================================
+    // BƯỚC 2: TẠO ĐƠN HÀNG
+    // =====================================================================
     const orderUserId = user_id ? Number(user_id) : null;
     const orderSessionId = session_id || "session_direct";
-    const initialOrderStatus = payment_method === "momo" ? 0 : 1;
 
-    // Chuẩn hóa địa chỉ thành JSON string 4 cấp (street/ward/district/city)
-    // trước khi lưu — dùng chung logic với OrderController.createOrder để
-    // không bao giờ đẩy thẳng array/object vào cột `address` (kiểu TEXT/STRING).
+    const initialOrderStatus =
+      method === "momo"
+        ? OrderStatus.AWAITING_MOMO
+        : method === "bank"
+          ? OrderStatus.AWAITING_BANK
+          : OrderStatus.PENDING;
+
     const addressJsonString = buildAddressString(req.body);
 
     const newOrder = await db.orders.create(
@@ -717,7 +670,9 @@ async function checkoutCart(req, res) {
         session_id: orderSessionId,
         user_id: orderUserId,
         status: initialOrderStatus,
-        total: Number(finalTotal),
+        payment_method: method,
+        is_paid: false,
+        total: finalTotal,
         note: note || null,
         phone: phone || null,
         address: addressJsonString,
@@ -725,27 +680,21 @@ async function checkoutCart(req, res) {
       { transaction },
     );
 
-    // =========================================================================
-    // BƯỚC 3: GHI LƯỢT DÙNG VOUCHER (ĐÃ CÓ ORDER_ID TỪ NEWORDER)
-    // =========================================================================
+    // =====================================================================
+    // BƯỚC 3: GHI LƯỢT DÙNG VOUCHER
+    // =====================================================================
     if (appliedVoucher) {
-      const VoucherModel = db.vouchers || db.Voucher;
-      const VoucherUsageModel =
-        db.voucher_usages || db.voucherusages || db.VoucherUsages;
-
-      // Cập nhật lượt đã dùng của Voucher (+1)
       await VoucherModel.update(
         { used_count: (appliedVoucher.used_count || 0) + 1 },
         { where: { id: appliedVoucher.id }, transaction },
       );
 
-      // Lưu nhật ký sử dụng voucher gắn với newOrder.id
       if (VoucherUsageModel) {
         await VoucherUsageModel.create(
           {
             voucher_id: appliedVoucher.id,
             user_id: orderUserId,
-            order_id: newOrder.id, // ✅ ĐÃ CÓ ORDER_ID - KHÔNG CÒN LỖI NULL VIOLATION
+            order_id: newOrder.id,
             used_at: new Date(),
           },
           { transaction },
@@ -753,28 +702,30 @@ async function checkoutCart(req, res) {
       }
     }
 
-    // =========================================================================
-    // BƯỚC 4: TẠO CHI TIẾT ĐƠN HÀNG
-    // =========================================================================
-    const finalOrderDetails = orderDetails.map((detail) => ({
-      order_id: newOrder.id,
-      product_id: detail.product_id,
-      product_variant_value_id:
-        detail.product_variant_value_id || detail.variant_id || null,
-      price: detail.price,
-      quantity: detail.quantity || 1,
-    }));
-
+    // =====================================================================
+    // BƯỚC 4: CHI TIẾT ĐƠN HÀNG
+    // =====================================================================
     const OrderDetailModel = db.order_detail || db.order_details;
-    if (OrderDetailModel && typeof OrderDetailModel.bulkCreate === "function") {
-      await OrderDetailModel.bulkCreate(finalOrderDetails, { transaction });
-    } else {
-      await transaction.rollback();
-      return res.status(500).json({
-        message:
-          "Không tìm thấy cấu hình bảng lưu trữ chi tiết đơn hàng (order_detail)",
-      });
+    if (
+      !OrderDetailModel ||
+      typeof OrderDetailModel.bulkCreate !== "function"
+    ) {
+      throw new CheckoutError(
+        500,
+        "Không tìm thấy cấu hình bảng lưu trữ chi tiết đơn hàng (order_detail)",
+      );
     }
+
+    await OrderDetailModel.bulkCreate(
+      orderDetails.map((d) => ({
+        order_id: newOrder.id,
+        product_id: d.product_id,
+        product_variant_value_id: d.product_variant_value_id || null,
+        price: d.price,
+        quantity: d.quantity || 1,
+      })),
+      { transaction },
+    );
 
     if (orderUserId) {
       const UserModel = db.users || db.User;
@@ -786,60 +737,72 @@ async function checkoutCart(req, res) {
       }
     }
 
-    // =========================================================================
-    // BƯỚC 5: XỬ LÝ CỔNG THANH TOÁN
-    // =========================================================================
+    // =====================================================================
+    // BƯỚC 5: CỔNG THANH TOÁN
+    // =====================================================================
+    const orderCode = `DH${newOrder.id}`;
     let momoPayUrl = null;
 
-    if (payment_method === "momo") {
+    if (method === "momo") {
       try {
-        const momoAmount = Math.round(Number(newOrder.total));
         const momoRes = await createMomoPayment(
           newOrder.id,
-          momoAmount,
-          `Thanh toan don hang DH${newOrder.id}`,
+          finalTotal,
+          `Thanh toan don hang ${orderCode}`,
         );
         momoPayUrl = momoRes?.payUrl || null;
+        if (!momoPayUrl) throw new Error("MoMo không trả về payUrl");
       } catch (momoErr) {
-        await transaction.rollback();
         console.error("Lỗi gọi API MoMo:", momoErr);
-        return res.status(400).json({
-          message: "Khởi tạo cổng thanh toán MoMo thất bại. Vui lòng thử lại!",
-          error: momoErr.message || momoErr,
-        });
+        throw new CheckoutError(
+          400,
+          "Khởi tạo cổng thanh toán MoMo thất bại. Vui lòng thử lại!",
+        );
       }
     }
 
     await transaction.commit();
 
-    // RESPONSE CHO CLIENT
-    if (payment_method === "momo") {
+    // =====================================================================
+    // RESPONSE
+    // =====================================================================
+    if (method === "momo") {
       return res.status(200).json({
         message: "Khởi tạo thanh toán MoMo thành công!",
         data: {
           order_id: newOrder.id,
+          order_code: orderCode,
           payment_method: "momo",
           paymentUrl: momoPayUrl,
         },
       });
     }
 
-    if (payment_method === "bank" || payment_method === "vnpay") {
+    if (method === "bank") {
       const bankId = process.env.BANK_ID || "MB";
       const accountNo = process.env.BANK_ACCOUNT_NO || "0987654321";
-      const accountName = encodeURIComponent(
-        process.env.BANK_ACCOUNT_NAME || "SHOP TECH",
-      );
-      const memo = encodeURIComponent(`THANH TOAN DH${newOrder.id}`);
+      const accountNameRaw = process.env.BANK_ACCOUNT_NAME || "SHOP TECH";
 
-      const qrImageUrl = `https://img.vietqr.io/image/${bankId}-${accountNo}-compact2.png?amount=${newOrder.total}&addInfo=${memo}&accountName=${accountName}`;
+      // Nội dung CK chỉ gồm mã đơn để webhook tách bằng regex /DH\d+/
+      const qrImageUrl =
+        `https://img.vietqr.io/image/${bankId}-${accountNo}-compact2.png` +
+        `?amount=${finalTotal}` +
+        `&addInfo=${encodeURIComponent(orderCode)}` +
+        `&accountName=${encodeURIComponent(accountNameRaw)}`;
 
       return res.status(200).json({
         message: "Tạo mã QR thanh toán thành công!",
         data: {
           order_id: newOrder.id,
+          order_code: orderCode,
           payment_method: "bank",
           qrImageUrl,
+          bank: bankId,
+          account_no: accountNo,
+          account_name: accountNameRaw,
+          amount: finalTotal,
+          transfer_content: orderCode,
+          expires_at: Date.now() + QR_EXPIRE_MINUTES * 60 * 1000,
         },
       });
     }
@@ -849,12 +812,22 @@ async function checkoutCart(req, res) {
         isBuyNow || isDirectItems
           ? "Mua trực tiếp thành công!"
           : "Thanh toán thành công!",
-      data: { order_id: newOrder.id, role: 1, payment_method: "cod" },
+      data: {
+        order_id: newOrder.id,
+        order_code: orderCode,
+        role: 1,
+        payment_method: "cod",
+      },
     });
   } catch (error) {
     if (transaction && !transaction.finished) {
       await transaction.rollback();
     }
+
+    if (error instanceof CheckoutError) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
     console.error("CRASH TẠI BACKEND CHECKOUT:", error);
     return res.status(500).json({
       message: "Checkout thất bại do lỗi hệ thống",
@@ -880,10 +853,76 @@ async function deleteCart(req, res) {
   }
 }
 
+
+// Hỏi MoMo trạng thái giao dịch (dùng khi khách quay về từ MoMo, hoặc khi test local)
+async function verifyMomoPayment(req, res) {
+  const momoOrderId = String(req.query.orderId || "");
+  const dbOrderId = parseInt(momoOrderId.split("_")[0].replace("DH", ""), 10);
+  if (!dbOrderId) {
+    return res.status(400).json({ message: "orderId không hợp lệ" });
+  }
+
+  const order = await db.orders.findByPk(dbOrderId);
+  if (!order) return res.status(404).json({ message: "Không tìm thấy đơn" });
+
+  // Đã xử lý rồi (ví dụ IPN đến trước) thì trả luôn
+  if (order.status !== OrderStatus.AWAITING_MOMO) {
+    return res.json({ status: order.status, is_paid: order.is_paid });
+  }
+
+  const {
+    MOMO_PARTNER_CODE: partnerCode,
+    MOMO_ACCESS_KEY: accessKey,
+    MOMO_ENDPOINT,
+  } = process.env;
+
+  // .../gateway/api/create  ->  .../gateway/api/query
+  const queryEndpoint = MOMO_ENDPOINT.replace("/create", "/query");
+  const requestId = `${momoOrderId}-q${Date.now()}`;
+
+  const rawSignature =
+    `accessKey=${accessKey}&orderId=${momoOrderId}` +
+    `&partnerCode=${partnerCode}&requestId=${requestId}`;
+
+  const resp = await fetch(queryEndpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      partnerCode,
+      requestId,
+      orderId: momoOrderId,
+      lang: "vi",
+      signature: momoSign(rawSignature),
+    }),
+  });
+  const data = await resp.json();
+  console.log("MoMo query:", data);
+
+  // resultCode 0 = đã thanh toán thành công. Kiểm tra thêm số tiền khớp đơn.
+  if (Number(data.resultCode) === 0 && Number(data.amount) === Number(order.total)) {
+    await db.orders.update(
+      {
+        status: OrderStatus.PROCESSING,
+        is_paid: true,
+        paid_at: new Date(),
+        transaction_id: String(data.transId),
+      },
+      { where: { id: dbOrderId, status: OrderStatus.AWAITING_MOMO } },
+    );
+  }
+
+  const fresh = await db.orders.findByPk(dbOrderId, {
+    attributes: ["id", "status", "is_paid"],
+  });
+  return res.json({ status: fresh.status, is_paid: fresh.is_paid });
+}
 module.exports = {
+  momoSign,
+  createMomoPayment,
   getCarts,
   getCartById,
   insertCart,
   deleteCart,
   checkoutCart,
+  verifyMomoPayment,
 };

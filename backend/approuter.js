@@ -93,15 +93,18 @@ function approuter(app) {
     requireRoles([UserRole.MANAGER, UserRole.ADMIN]),
     asyncHandler(Product.getMyProducts),
   );
-  router.patch("/products/:id/restore", 
+  router.patch(
+    "/products/:id/restore",
 
     requireRoles([UserRole.MANAGER, UserRole.ADMIN]),
     asyncHandler(Product.restoreProduct),
   );
 
-  router.get("/products/deleted", 
+  router.get(
+    "/products/deleted",
     requireRoles([UserRole.MANAGER, UserRole.ADMIN]),
-    asyncHandler(Product.getDeletedProducts),);
+    asyncHandler(Product.getDeletedProducts),
+  );
   router.get("/products/:id", asyncHandler(Product.getProductById));
 
   // News & News Detail
@@ -238,26 +241,66 @@ function approuter(app) {
 
   router.post(
     "/carts/checkout",
-    
+
     requireRoles([UserRole.USER]),
     asyncHandler(CartController.checkoutCart),
   );
 
+
+    router.get(
+      "/momo/verify",
+      requireRoles([UserRole.USER]),
+      asyncHandler(CartController.verifyMomoPayment),
+    );
+  // MoMo IPN
   // MoMo IPN
   router.post(
     "/momo-ipn",
     asyncHandler(async (req, res) => {
-      try {
-        const { orderId, resultCode, message } = req.body;
-        if (resultCode === 0) {
-          const dbOrderId = orderId.replace("DH", "");
-          const db = require("../models");
-          await db.orders.update({ status: 2 }, { where: { id: dbOrderId } });
-        }
-        return res.status(204).send();
-      } catch (error) {
-        return res.status(500).json({ message: "Internal Server Error" });
+      const b = req.body;
+      const db = require("./models"); // chỉnh cho khớp: approuter nằm cùng cấp với controllers/ nên có thể là "./models"
+
+      // 1. Kiểm tra chữ ký
+      const raw =
+        `accessKey=${process.env.MOMO_ACCESS_KEY}&amount=${b.amount}&extraData=${b.extraData}` +
+        `&message=${b.message}&orderId=${b.orderId}&orderInfo=${b.orderInfo}` +
+        `&orderType=${b.orderType}&partnerCode=${b.partnerCode}&payType=${b.payType}` +
+        `&requestId=${b.requestId}&responseTime=${b.responseTime}` +
+        `&resultCode=${b.resultCode}&transId=${b.transId}`;
+
+      if (CartController.momoSign(raw) !== b.signature) {
+        console.warn("IPN sai chữ ký:", b);
+        return res.status(400).end();
       }
+
+      // 2. "DH17_1730000000000" -> 17
+      const dbOrderId = parseInt(
+        String(b.orderId).split("_")[0].replace("DH", ""),
+        10,
+      );
+      if (!dbOrderId) return res.status(204).end();
+
+      // 3. Thành công: chỉ đổi đơn đang chờ MoMo và đúng số tiền
+      if (Number(b.resultCode) === 0) {
+        const [affected] = await db.orders.update(
+          {
+            status: OrderStatus.PROCESSING,
+            is_paid: true,
+            paid_at: new Date(),
+            transaction_id: String(b.transId),
+          },
+          {
+            where: {
+              id: dbOrderId,
+              status: OrderStatus.AWAITING_MOMO,
+              total: b.amount,
+            },
+          },
+        );
+        if (affected === 0) console.warn("IPN không khớp đơn:", b);
+      }
+
+      return res.status(204).end();
     }),
   );
 
@@ -548,7 +591,7 @@ function approuter(app) {
 
   router.get(
     "/chat/conversations/:id/messages",
-    
+
     requireRoles([UserRole.USER, UserRole.MANAGER, UserRole.ADMIN]),
     asyncHandler(ChatController.getMessages),
   );
@@ -560,18 +603,18 @@ function approuter(app) {
     asyncHandler(ChatController.sendMessage),
   );
 
-
   router.get("/setting", asyncHandler(SettingController.getSettings));
-router.put(
-  "/setting",
-  requireRoles([UserRole.ADMIN, UserRole.MANAGER]),
-  asyncHandler(SettingController.updateSettings),
-);
+  router.put(
+    "/setting",
+    requireRoles([UserRole.ADMIN, UserRole.MANAGER]),
+    asyncHandler(SettingController.updateSettings),
+  );
 
-
-router.post('/products/search-by-image', upload.single('image'), searchByImage);
-
-
+  router.post(
+    "/products/search-by-image",
+    upload.single("image"),
+    searchByImage,
+  );
 
   app.use("/api", router);
 }

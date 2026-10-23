@@ -443,7 +443,6 @@ const Checkout = () => {
       const isReorder = !!(buyNowState && buyNowState.isReorder);
 
       let orderPayload = {
-        total: Number(total),
         note: `Khách: ${form.name}. ĐC: ${form.address}, ${form.ward}, ${form.district}, ${form.city}. SĐT: ${form.phone}`,
         payment_method: payment,
         phone: form.phone,
@@ -489,31 +488,43 @@ const Checkout = () => {
 
       const response = await orderService.checkoutCart(orderPayload);
       const resData = response?.data || response;
+      // Backend trả { message, data: {...} }; chuẩn hóa lấy phần data
+      const d = resData?.data || resData;
 
       if (payment === "momo") {
-        const redirectUrl =
-          resData?.paymentUrl || resData?.payUrl || resData?.data?.paymentUrl;
-        if (redirectUrl) {
-          if (!isBuyNow && !isReorder) localStorage.removeItem("cart_id");
-          window.location.href = redirectUrl;
-          return;
+        const redirectUrl = d?.paymentUrl || d?.payUrl;
+        if (!redirectUrl) {
+          // KHÔNG được coi là thành công nếu không có link thanh toán
+          throw new Error(
+            "Không tạo được liên kết thanh toán MoMo. Vui lòng thử lại.",
+          );
         }
+        if (!isBuyNow && !isReorder) localStorage.removeItem("cart_id");
+        window.location.href = redirectUrl;
+        return;
       }
 
       if (payment === "bank") {
-        const qrUrl =
-          resData?.qrImageUrl || resData?.data?.qrImageUrl || resData?.qrCode;
-        if (qrUrl) {
-          setQrModalData({
-            qrImageUrl: qrUrl,
-            orderId: resData?.order_id || resData?.data?.order_id,
-            total,
-          });
-          if (!isBuyNow && !isReorder) localStorage.removeItem("cart_id");
-          return;
+        if (!d?.qrImageUrl) {
+          throw new Error(
+            "Không tạo được mã QR chuyển khoản. Vui lòng thử lại.",
+          );
         }
+        setQrModalData({
+          qrImageUrl: d.qrImageUrl,
+          orderId: d.order_id,
+          orderCode: d.order_code,
+          accountNo: d.account_no,
+          accountName: d.account_name,
+          bank: d.bank,
+          expiresAt: d.expires_at,
+          total,
+        });
+        if (!isBuyNow && !isReorder) localStorage.removeItem("cart_id");
+        return;
       }
 
+      // Chỉ COD mới tới đây
       if (!isBuyNow && !isReorder) localStorage.removeItem("cart_id");
       setSuccess(true);
     } catch (err) {
